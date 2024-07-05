@@ -1,0 +1,712 @@
+#!/usr/bin/stap
+
+/*
+ - Simple memory usage diagnostics tool, requires glibc  and libstdc++
+ - As long as systemtap works during execution, otherwise see:
+   https://sourceware.org/systemtap/wiki/TipExhaustedResourceErrors
+   it should only not list memory allocated with direct syscalls or
+   get confused with munmap calls that release partial amounts of memory
+ - Calls to mmap actually maping a file in memory might also end
+   with inconsistent results
+
+ - Once the program exits, or receives a SIGURG, a diagnostic is printed of
+   all known memory allocations.
+ - The script attempts to do its best to keep track of memory allocation and
+   release to avoid printing misleading data, but it almost certainly has
+   bugs.
+
+ To match the code address, you might temporarily run:
+ # echo 0 > /proc/sys/kernel/randomize_va_space
+ or after a kill -URG attach gdb to the process and disassemble the address.
+ Backtraces are not saved, otherwise the tool would be only useful for very
+ small binaries.
+ The tool/script attempts to have some use by saving the return address of
+ the memory allocation routine.
+
+ Works only on x86_64. Does not really need glibc nor libstdc++ debuginfo,
+ as it takes values direct from registers, and due to this, needs to know
+ about the abi.
+
+ Should work at least on RHEL8, RHEL9 and Fedora 39.
+ Likely to "bitrot" in a few years and/or Linux releases.
+
+ Preparing to run:
+ # dnf install -y systemtap
+ # stap-prep
+
+ Running the script:
+ # stap -DMAXMAPENTRIES=262144 -DSTP_OVERLOAD_THRESHOLD=1073741824LL -DSTP_OVERLOAD_INTERVAL=2147483648LL -DMAXACTION=16384 memory.stp -c $COMMAND
+ (( note the options, that otherwise, will fail for not so large binaries ))
+
+ Forcing printing diagnostics:
+ # kill -URG $(pidof $COMMAND)
+
+ Checking the code:
+ # gdb -p $(pidof $COMMAND)
+
+ In gdb, can check addresses with something like:
+ (gdb) x/20i $ADDRESS-32
+ or
+ (gdb) disassemble $ADDRESS
+
+  Sample output with full verbose mode:
+
+$ sudo stap -DMAXMAPENTRIES=262144 -Gverbose=2 -DSTP_OVERLOAD_THRESHOLD=1073741824LL -DSTP_OVERLOAD_INTERVAL=2147483648LL -DMAXACTION=16384 memory.stp -c /bin/ls
+Stap ready.
+...
+Stap done.
+
+            Size	      Count     	Allocator       	Code Address
+------------------------------------------------------------------------------------------------
+             166	      15-1       	malloc          	0x7fb554ee660f (strdup)
+       224366320	       1-0       	mmap            	0x7fb554e76752 (_nl_load_locale_from_archive)
+             120	       1-0       	malloc          	0x7fb554e764f4 (_nl_load_locale_from_archive)
+             792	       1-0       	malloc          	0x7fb554e75950 (_nl_intern_locale_data)
+            2864	      11-0       	malloc          	0x7fb554e75863 (_nl_intern_locale_data)
+              12	       1-0       	malloc          	0x7fb554e746ac (new_composite_name)
+              34	       1-0       	malloc          	0x7fb554e78393 (set_binding_values.part.0)
+             112	       2-0       	malloc          	0x55f5ad7249cc
+             128	       1-0       	malloc          	0x55f5ad71c65a (tzalloc)
+           62400	       3-0       	reallocarray    	0x55f5ad7183a7 (main)
+            1156	      90-1       	malloc          	0x55f5ad72453f (xstrdup)
+           27012	       1-0       	mmap            	0x7fb554e7360d (__gconv_load_cache)
+             208	       1-0       	malloc          	0x7fb554e73955 (__gconv_lookup_cache)
+             208	       1-0       	malloc          	0x7fb554e73a33 (__gconv_lookup_cache)
+            6408	       3-0       	reallocarray    	0x55f5ad721f21 (sort_files)
+            5760	       3-0       	reallocarray    	0x55f5ad722c6b
+           77760	       3-0       	reallocarray    	0x55f5ad722cf2
+Bogus Total                                              224551460 (       0xd626224)
+Bogus Break [0x55f5e9cd9000  -  0x55f5e9cfa000] =           135168 (         0x21000)
+Bogus Heap                                                  158128 (         0x269b0)
+Bogus NoMap                                                 158128 (         0x269b0)
+
+  Bogus Total is accounted memory not released
+  Bogus Break is accounted memory in main arena
+  Bogus Heap  is accounted memory in use and allocated from main arena
+  Bogus NoMap is accounted memory not released but not allocated with m(re)map
+
+  For single threaded applications, Bogus Heap and Bogus NoMap should have
+  the same value on normal conditions (sans bugs or conditions not handled).
+  For multithreaded applications usually Bogus NoMap will have a higher value,
+  depending on memory not released by thread and/or if the application exits
+  without joining all threads.
+
+  Note that "not released" does not mean a detected leak. The memory usually
+  should be reachable; this script does not attempt to check if pointers are
+  reachable during report. The kernel eventually will release all memory when
+  the application exits. Still, the closer to 0 is left as Bogus Heap and
+  Bogus NoMap the closer to leak free the binary is.
+
+  Note that the call to probefunc() is better than ppfunc() because probefunc()
+  was the best I could get to some symbolic information in verbose mode.
+
+ Author:	Paulo Cesar Pereira de Andrade
+ */
+
+global bytes_alloced_in_code_address;
+global pointer_alloc_addresses_in_code;
+global pointer_sizes;
+
+/* Bogus malloc main_arena area information */
+global break_start;
+global break_end;
+global break_alloc = 0;
+
+/* -Gverbose=1 to print allocator names */
+global verbose = 0;
+
+/* avoid double stats */
+global news;
+global deletes;
+
+/* alloc type in verbose mode */
+global allocs;
+
+/* Number of alloc hits in verbose mode */
+global count_alloced_in_code_address;
+/* Number of release hits in verbose mode */
+global count_freed_in_code_address;
+/* Approximate probe name in verbose name */
+global code_probe_names;
+
+/* constants (kind of) */
+global n_mmap = 1;
+global n_mremap = 2;
+global n_malloc = 3;
+global n_calloc = 4;
+global n_realloc = 5;
+global n_reallocarray = 6;
+global n_posix_memalign = 7;
+global n_aligned_alloc = 8;
+global n_new = 9;
+
+probe begin {
+    printf("Stap ready.\n")
+}
+
+probe process("/lib64/libc.so.6").function("brk").return {
+    result = @defined($return) ? $return : register("rax");
+    if (result == 0) {
+	address = @defined(@entry($arg1)) ?
+			   @entry($arg1) : @entry(register("rdi"));
+	if (break_start == 0 || address < break_start)
+	    break_start = address;
+	if (break_end == 0 || address > break_end)
+	    break_end = address;
+    }
+}
+
+probe process("/lib64/libc.so.6").function("sbrk").return {
+    address = @defined($return) ? $return : register("rax");
+    if (address != -1) {
+	/*
+	increment = @defined(@entry($arg1)) ?
+			     @entry($arg1) : @entry(register("rdi"));
+	 */
+	if (break_start == 0 || address < break_start)
+	    break_start = address;
+	if (break_end == 0 || address > break_end)
+	    break_end = address;
+    }
+}
+
+function forget(address:long) {
+    /* Avoid remembering non useful information for too long */
+    if (verbose)
+	delete allocs[address];
+}
+
+probe process("/lib64/libc.so.6").function("mmap").return {
+    if (pid() != target())
+	next;
+    pointer = @defined($return) ? $return : register("rax");
+    if (pointer != -1) {
+	code_address = uaddr();
+	size = @defined(@entry($arg2)) ?
+			@entry($arg2) : @entry(register("rsi"));
+	bytes_alloced_in_code_address[code_address] += size;
+	pointer_alloc_addresses_in_code[pointer] = code_address;
+	pointer_sizes[pointer] = size;
+	if (verbose) {
+	    allocs[code_address] = n_mmap;
+	    ++count_alloced_in_code_address[code_address];
+	    if (verbose > 1)
+		code_probe_names[code_address] = probefunc();
+	}
+    }
+}
+
+probe process("/lib64/libc.so.6").function("mremap").return {
+    if (pid() != target())
+	next;
+    old_size = 0;
+    old_pointer = @defined(@entry($arg1)) ?
+			   @entry($arg1) : @entry(register("rdi"));
+    if (old_pointer) {
+	old_size = pointer_sizes[old_pointer];
+	delete pointer_sizes[old_pointer];
+    }
+    /* inline munmap */
+    old_code_address = pointer_alloc_addresses_in_code[old_pointer];
+    if (old_code_address) {
+	bytes_alloced_in_code_address[old_code_address] -= old_size;
+	/* Avoid problems when mremap is used to reduce an array size */
+	/*
+	if (bytes_alloced_in_code_address[old_code_address] <= 0) {
+	    delete bytes_alloced_in_code_address[old_code_address];
+	    forget(old_code_address);
+	}
+	 */
+	if (verbose)
+	    ++count_freed_in_code_address[old_code_address];
+    }
+    /* inline mmap */
+    new_pointer = @defined($return) ? $return : register("rax");
+    if (new_pointer != -1) {
+	new_code_address = uaddr();
+	new_size = @defined(@entry($arg3)) ?
+			    @entry($arg3) : @entry(register("rdx"));
+	bytes_alloced_in_code_address[new_code_address] += new_size;
+	pointer_alloc_addresses_in_code[new_pointer] = new_code_address;
+	// assume new_size > 0
+	pointer_sizes[new_pointer] = new_size;
+	if (verbose) {
+	    allocs[new_code_address] = n_mremap;
+	    ++count_alloced_in_code_address[new_code_address];
+	    if (verbose > 1)
+		code_probe_names[new_code_address] = probefunc();
+	}
+    }
+}
+
+probe process("/lib64/libc.so.6").function("munmap") {
+    if (pid() != target())
+	next;
+    pointer = @defined($arg1) ? $arg1 : register("rdi");
+    size = @defined($arg2) ? $arg2 : register("rsi");
+    /* These should only happen in glibc code, possibly due to memory
+     * mapped with a direct syscall during binary load */
+    /*
+    if (pointer_sizes[pointer] != size) {
+	printf("warning: munmap size difers: %ld - %ld\n",
+	       pointer_sizes[pointer], size);
+	print_ubacktrace();
+    }
+    */
+    delete pointer_sizes[pointer];
+    code_address = pointer_alloc_addresses_in_code[pointer];
+    if (code_address) {
+	bytes_alloced_in_code_address[code_address] -= size;
+	if (bytes_alloced_in_code_address[code_address] <= 0)
+	    delete bytes_alloced_in_code_address[code_address];
+	delete pointer_alloc_addresses_in_code[pointer];
+	if (--bytes_alloced_in_code_address[code_address] <= 0) {
+	    delete bytes_alloced_in_code_address[code_address];
+	    forget(code_address);
+	}
+    }
+}
+
+probe
+process("/lib64/libc.so.6").function("malloc").return,
+process("/lib64/libc.so.6").function("valloc").return,	/* deprecated */
+process("/lib64/libc.so.6").function("pvalloc").return	/* deprecated */
+{
+    if (pid() != target() || news[tid()])
+	next;
+    pointer = @defined($return) ? $return : register("rax");
+    size = @defined(@entry($arg1)) ? @entry($arg1) : @entry(register("rdi"));
+    if (size && pointer) {
+	code_address = uaddr();
+	bytes_alloced_in_code_address[code_address] += size;
+	pointer_alloc_addresses_in_code[pointer] = code_address;
+	pointer_sizes[pointer] = size;
+	if (verbose) {
+	    allocs[code_address] = n_malloc;
+	    ++count_alloced_in_code_address[code_address];
+	    if (verbose > 1) {
+		code_probe_names[code_address] = probefunc();
+		if (pointer >= break_start && pointer < break_end)
+		    break_alloc += size;
+	    }
+	}
+    }
+}
+
+probe process("/lib64/libc.so.6").function("calloc").return {
+    if (pid() != target() || news[tid()])
+	next;
+    pointer = @defined($return) ? $return : register("rax");
+    number  = @defined(@entry($arg1)) ? @entry($arg1) : @entry(register("rdi"));
+    count   = @defined(@entry($arg2)) ? @entry($arg2) : @entry(register("rsi"));
+    size *= number * count;
+    if (size && pointer) {
+	code_address = uaddr();
+	bytes_alloced_in_code_address[code_address] += size;
+	pointer_alloc_addresses_in_code[pointer] = code_address;
+	pointer_sizes[pointer] = size;
+	if (verbose) {
+	    allocs[code_address] = n_calloc;
+	    ++count_alloced_in_code_address[code_address];
+	    if (verbose > 1) {
+		code_probe_names[code_address] = probefunc();
+		if (pointer >= break_start && pointer < break_end)
+		    break_alloc += size;
+	    }
+	}
+    }
+}
+
+probe process("/lib64/libc.so.6").function("realloc").return {
+    if (pid() != target())
+	next;
+    new_pointer	= @defined($return) ? $return : register("rax");
+    old_pointer = @defined(@entry($arg1)) ?
+			   @entry($arg1) : @entry(register("rdi"));
+    new_size	= @defined(@entry($arg2)) ?
+			   @entry($arg2) : @entry(register("rsi"));
+    code_address = uaddr();
+    old_size = 0;
+    old_code_address = pointer_alloc_addresses_in_code[old_pointer];
+    if (old_code_address) {
+	delete pointer_alloc_addresses_in_code[old_code_address];
+	old_size = pointer_sizes[old_pointer];
+	delete pointer_sizes[old_pointer];
+	bytes_alloced_in_code_address[old_code_address] -= old_size;
+	if (verbose > 1 &&
+	    old_pointer >= break_start && old_pointer < break_end)
+	    break_alloc -= old_size;
+	/* Avoid miscalculation when realloc is used to reduce an array size */
+	/*
+	if (bytes_alloced_in_code_address[old_code_address] <= 0) {
+	    delete bytes_alloced_in_code_address[old_code_address];
+	    forget(old_code_address);
+	}
+	 */
+	if (verbose)
+	    ++count_freed_in_code_address[old_code_address];
+    }
+    // assume no overflow
+    bytes_alloced_in_code_address[code_address] += new_size;
+    if (new_pointer) {
+	pointer_alloc_addresses_in_code[new_pointer] = code_address;
+	pointer_sizes[new_pointer] = new_size;
+	if (verbose) {
+	    allocs[code_address] = n_realloc;
+	    ++count_alloced_in_code_address[code_address];
+	    if (verbose > 1) {
+		code_probe_names[code_address] = probefunc();
+		if (new_pointer >= break_start && new_pointer < break_end)
+		    break_alloc += new_size;
+	    }
+	}
+    }
+}
+
+probe process("/lib64/libc.so.6").function("reallocarray").return {
+    if (pid() != target())
+	next;
+    new_pointer	= @defined($return) ? $return : register("rax");
+    old_pointer	= @defined(@entry($arg1)) ?
+			   @entry($arg1) : @entry(register("rdi"));
+    number	= @defined(@entry($arg2)) ?
+			   @entry($arg2) : @entry(register("rsi"));
+    count	= @defined(@entry($arg3)) ?
+			   @entry($arg3) : @entry(register("rdx"));
+    new_size = number * count;
+    code_address = uaddr();
+    old_size = 0;
+    old_code_address = pointer_alloc_addresses_in_code[old_pointer];
+    if (old_code_address) {
+	delete pointer_alloc_addresses_in_code[old_code_address];
+	old_size = pointer_sizes[old_pointer];
+	delete pointer_sizes[old_pointer];
+	bytes_alloced_in_code_address[old_code_address] -= old_size;
+	if (verbose > 1 &&
+	    old_pointer >= break_start && old_pointer < break_end)
+	    break_alloc -= old_size;
+	/* Avoid miscalculation when realloc is used to reduce an array size */
+	/*
+	if (bytes_alloced_in_code_address[old_code_address] <= 0) {
+	    delete bytes_alloced_in_code_address[old_code_address];
+	    forget(old_code_address);
+	}
+	 */
+	if (verbose)
+	    ++count_freed_in_code_address[old_code_address];
+    }
+    // assume no overflow
+    bytes_alloced_in_code_address[code_address] += new_size;
+    if (new_pointer) {
+	pointer_alloc_addresses_in_code[new_pointer] = code_address;
+	pointer_sizes[new_pointer] = new_size;
+	if (verbose) {
+	    allocs[code_address] = n_reallocarray;
+	    ++count_alloced_in_code_address[code_address];
+	    if (verbose > 1) {
+		code_probe_names[code_address] = probefunc();
+		if (new_pointer >= break_start && new_pointer < break_end)
+		    break_alloc += new_size;
+	    }
+	}
+    }
+}
+
+probe process("/lib64/libc.so.6").function("posix_memalign").return {
+    if (pid() != target() || news[tid()])
+	next;
+    result = @defined($return) ? $return : register("rax");
+    if (result == 0) {
+	pointer_to_pointer = @defined(@entry($arg1)) ?
+				      @entry($arg1) : register("rdi");
+	size		   = @defined(@entry($arg3)) ?
+				      @entry($arg3) : register("rdx");
+	code_address = uaddr();
+	pointer = user_int64(pointer_to_pointer);
+	bytes_alloced_in_code_address[code_address] += size;
+	pointer_alloc_addresses_in_code[pointer] = code_address;
+	pointer_sizes[pointer] = size;
+	if (verbose) {
+	    allocs[code_address] = n_posix_memalign;
+	    ++count_alloced_in_code_address[code_address];
+	    if (verbose > 1) {
+		code_probe_names[code_address] = probefunc();
+		if (pointer >= break_start && pointer < break_end)
+		    break_alloc += size;
+	    }
+	}
+    }
+}
+
+probe
+process("/lib64/libc.so.6").function("aligned_alloc").return,
+process("/lib64/libc.so.6").function("memalign").return	/* deprecated */
+{
+    if (pid() != target() || news[tid()])
+	next;
+    pointer = @defined($return) ? $return : register("rax");
+    size    = @defined(@entry($arg2)) ?
+		       @entry($arg2) : @entry(register("rsi"));
+    if (size && pointer) {
+	code_address = uaddr();
+	bytes_alloced_in_code_address[code_address] += size;
+	pointer_alloc_addresses_in_code[pointer] = code_address;
+	pointer_sizes[pointer] = size;
+	if (verbose) {
+	    allocs[code_address] = n_aligned_alloc;
+	    ++count_alloced_in_code_address[code_address];
+	    if (verbose > 1) {
+		code_probe_names[code_address] = probefunc();
+		if (pointer >= break_start && pointer < break_end)
+		    break_alloc += size;
+	    }
+	}
+    }
+}
+
+probe process("/lib64/libc.so.6").function("free") {
+    if (pid() != target() || deletes[tid()])
+	next;
+    pointer = @defined($arg1) ? $arg1 : register("rdi");
+    size = pointer_sizes[pointer];
+    if (pointer)
+	delete pointer_sizes[pointer];
+    code_address = pointer_alloc_addresses_in_code[pointer];
+    if (code_address) {
+	/* Should be invalid if attaching to process */
+	if (size) {
+	    if (verbose) {
+		++count_freed_in_code_address[code_address];
+		if (verbose > 1 &&
+		    pointer >= break_start && pointer < break_end)
+		    break_alloc -= size;
+	    }
+	    bytes_alloced_in_code_address[code_address] -= size;
+	    if (bytes_alloced_in_code_address[code_address] <= 0) {
+		delete bytes_alloced_in_code_address[code_address];
+		forget(code_address);
+	    }
+	}
+	delete pointer_alloc_addresses_in_code[pointer];
+    }
+}
+
+probe
+// operator new[](unsigned long, std::align_val_t)
+process("/lib64/libstdc++.so.6").function("_ZnamSt11align_val_t"),
+// operator new(unsigned long, std::align_val_t, std::nothrow_t const&)
+process("/lib64/libstdc++.so.6").function("_ZnwmSt11align_val_tRKSt9nothrow_t"),
+// operator new(unsigned long, std::align_val_t)
+process("/lib64/libstdc++.so.6").function("_ZnwmSt11align_val_t"),
+// operator new(unsigned long, std::nothrow_t const&)
+process("/lib64/libstdc++.so.6").function("_ZnwmRKSt9nothrow_t"),
+// operator new[](unsigned long, std::align_val_t, std::nothrow_t const&)
+process("/lib64/libstdc++.so.6").function("_ZnamSt11align_val_tRKSt9nothrow_t"),
+// operator new[](unsigned long)
+process("/lib64/libstdc++.so.6").function("_Znam"),
+// operator new[](unsigned long, std::nothrow_t const&)
+process("/lib64/libstdc++.so.6").function("_ZnamRKSt9nothrow_t"),
+// operator new(unsigned long)
+process("/lib64/libstdc++.so.6").function("_Znwm")
+{
+    if (pid() != target())
+	next;
+    news[tid()] = 1;
+}
+
+probe
+process("/lib64/libstdc++.so.6").function("_ZnamSt11align_val_t").return,
+process("/lib64/libstdc++.so.6").function("_ZnwmSt11align_val_tRKSt9nothrow_t").return,
+process("/lib64/libstdc++.so.6").function("_ZnwmSt11align_val_t").return,
+process("/lib64/libstdc++.so.6").function("_ZnwmRKSt9nothrow_t").return,
+process("/lib64/libstdc++.so.6").function("_ZnamSt11align_val_tRKSt9nothrow_t").return,
+process("/lib64/libstdc++.so.6").function("_Znam").return,
+process("/lib64/libstdc++.so.6").function("_ZnamRKSt9nothrow_t").return,
+process("/lib64/libstdc++.so.6").function("_Znwm").return
+{
+    if (pid() != target())
+	next;
+    pointer = @defined($return) ? $return : register("rax");
+    size    = @defined(@entry($arg1)) ?
+		       @entry($arg1) : @entry(register("rdi"));
+    if (size && pointer) {
+	code_address = uaddr();
+	bytes_alloced_in_code_address[code_address] += size;
+	pointer_alloc_addresses_in_code[pointer] = code_address;
+	pointer_sizes[pointer] = size;
+	if (verbose) {
+	    allocs[code_address] = n_new;
+	    ++count_alloced_in_code_address[code_address];
+	    if (verbose > 1) {
+		code_probe_names[code_address] = probefunc();
+		if (pointer >= break_start && pointer < break_end)
+		    break_alloc += size;
+	    }
+	}
+    }
+    delete news[tid()];
+}
+
+probe
+// operator delete(void*, std::align_val_t, std::nothrow_t const&)
+process("/lib64/libstdc++.so.6").function("_ZdlPvSt11align_val_tRKSt9nothrow_t"),
+// operator delete(void*, unsigned long)
+process("/lib64/libstdc++.so.6").function("_ZdlPvm"),
+// operator delete[](void*, std::nothrow_t const&)
+process("/lib64/libstdc++.so.6").function("_ZdaPvRKSt9nothrow_t"),
+// operator delete(void*, std::nothrow_t const&)
+process("/lib64/libstdc++.so.6").function("_ZdlPvRKSt9nothrow_t"),
+// operator delete[](void*, std::align_val_t, std::nothrow_t const&)
+process("/lib64/libstdc++.so.6").function("_ZdaPvSt11align_val_tRKSt9nothrow_t"),
+// operator delete(void*, unsigned long, std::align_val_t)
+process("/lib64/libstdc++.so.6").function("_ZdlPvmSt11align_val_t"),
+// operator delete(void*)
+process("/lib64/libstdc++.so.6").function("_ZdlPv"),
+// operator delete[](void*)
+process("/lib64/libstdc++.so.6").function("_ZdaPv"),
+// operator delete(void*, std::align_val_t)
+process("/lib64/libstdc++.so.6").function("_ZdlPvSt11align_val_t"),
+// operator delete[](void*, std::align_val_t)
+process("/lib64/libstdc++.so.6").function("_ZdaPvSt11align_val_t"),
+// operator delete[](void*, unsigned long)
+process("/lib64/libstdc++.so.6").function("_ZdaPvm"),
+// operator delete[](void*, unsigned long, std::align_val_t)
+process("/lib64/libstdc++.so.6").function("_ZdaPvmSt11align_val_t")
+{
+    if (pid() != target())
+	next;
+    deletes[tid()] = 1;
+    pointer = register("rdi");
+    size = pointer_sizes[pointer];
+    if (pointer)
+	delete pointer_sizes[pointer];
+    code_address = pointer_alloc_addresses_in_code[pointer];
+    if (code_address) {
+	/* Should be invalid if attaching to process */
+	if (size) {
+	    if (verbose) {
+		++count_freed_in_code_address[code_address];
+		if (verbose > 1 &&
+		    pointer >= break_start && pointer < break_end)
+		    break_alloc -= size;
+	    }
+	    bytes_alloced_in_code_address[code_address] -= size;
+	    if (bytes_alloced_in_code_address[code_address] <= 0) {
+		delete bytes_alloced_in_code_address[code_address];
+		forget(code_address);
+	    }
+	}
+	delete pointer_alloc_addresses_in_code[pointer];
+    }
+}
+
+probe
+process("/lib64/libstdc++.so.6").function("_ZdlPvSt11align_val_tRKSt9nothrow_t").return,
+process("/lib64/libstdc++.so.6").function("_ZdlPvm").return,
+process("/lib64/libstdc++.so.6").function("_ZdaPvRKSt9nothrow_t").return,
+process("/lib64/libstdc++.so.6").function("_ZdlPvRKSt9nothrow_t").return,
+process("/lib64/libstdc++.so.6").function("_ZdaPvSt11align_val_tRKSt9nothrow_t").return,
+process("/lib64/libstdc++.so.6").function("_ZdlPvmSt11align_val_t").return,
+process("/lib64/libstdc++.so.6").function("_ZdlPv").return,
+process("/lib64/libstdc++.so.6").function("_ZdaPv").return,
+process("/lib64/libstdc++.so.6").function("_ZdlPvSt11align_val_t").return,
+process("/lib64/libstdc++.so.6").function("_ZdaPvSt11align_val_t").return,
+process("/lib64/libstdc++.so.6").function("_ZdaPvm").return,
+process("/lib64/libstdc++.so.6").function("_ZdaPvmSt11align_val_t").return
+{
+    if (pid() != target())
+	next;
+    delete deletes[tid()];
+}
+
+function allocator:string(address:long) {
+    value = allocs[address];
+    if (value == n_mmap)		return "mmap";
+    if (value == n_mremap)		return "mremap";
+    if (value == n_malloc)		return "malloc";
+    if (value == n_calloc)		return "calloc";
+    if (value == n_realloc)		return "realloc";
+    if (value == n_reallocarray)	return "reallocarray";
+    if (value == n_posix_memalign)	return "posix_memalign";
+    if (value == n_aligned_alloc)	return "aligned_alloc";
+    if (value == n_new)			return "operator new";
+    return "???";
+}
+
+/* Note that what is listed are not leaks, but allocated memory, that
+ * could/should be reachable. */
+function report() {
+    total = 0;
+    total_nomap = 0;
+    break_range = break_end - break_start;
+    if (verbose) {
+	printf("\n%16s\t      Count     \t%-16s\t%s\n", "Size", "Allocator", "Code Address");
+	printf("------------------------------------------------------------------------------------------------\n");
+	foreach (address in bytes_alloced_in_code_address) {
+	    bytes = bytes_alloced_in_code_address[address];
+	    /* bytes might be zero for a realloc'ed pointer that started
+	     * as a malloc call. Checking it here is simpler. */
+	    if (bytes) {
+		total += bytes;
+		if (verbose > 1 &&
+		    allocs[address] != n_mmap &&
+		    allocs[address] != n_mremap)
+		    total_nomap += bytes;
+		printf("%16ld\t%8d-%-8d\t%-16s\t%s",
+		       bytes,
+		       count_alloced_in_code_address[address],
+		       count_freed_in_code_address[address],
+		       allocator(address),
+		       usymfileline(address));
+		/* do not print address twice */
+		if (verbose > 1 && !strtol(code_probe_names[address], 16))
+		    printf(" (%s)", code_probe_names[address]);
+		printf("\n");
+	    }
+	}
+    }
+    else {
+	printf("\n%16s\t%s\n", "Size", "Code Address");
+	printf("------------------------------------------------\n");
+	foreach (address in bytes_alloced_in_code_address) {
+	    bytes = bytes_alloced_in_code_address[address];
+	    if (bytes) {
+		total += bytes;
+		printf("%16ld\t%s\n", bytes, usymfileline(address));
+	    }
+	}
+    }
+    /*   Bogus total is bogus amount of memory not released - it is bogus
+     * because does not account for alignment, nor if the memory is from
+     * mmap or the main arena.
+     *   It also does not qualify as leaks at exit, as the memory might
+     * be reachable. */
+    printf("Bogus Total %54ld (%16p)\n", total, total);
+    printf("Bogus Break [%-16p-%16p] = %16ld (%16p)\n", break_start, break_end,
+	   break_range, break_range);
+    if (verbose > 1) {
+	printf("Bogus Heap  %54ld (%16p)\n", break_alloc, break_alloc);
+	printf("Bogus NoMap %54ld (%16p)", total_nomap, total_nomap);
+    }
+}
+
+probe signal.send {
+    if (sig_name == "SIGURG" && sig_pid == target())
+	report();
+}
+
+probe end {
+    printf("Stap done.\n");
+    report();
+    printf("\n");
+    delete pointer_alloc_addresses_in_code;
+    delete pointer_sizes;
+    if (verbose) {
+	delete count_alloced_in_code_address;
+	delete count_freed_in_code_address;
+	delete code_probe_names;
+	delete allocs;
+	if (verbose > 1)
+	    delete code_probe_names;
+    }
+}

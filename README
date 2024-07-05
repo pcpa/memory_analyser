@@ -1,0 +1,4 @@
+Simple memory usage diagnostics tool using systemtap
+Requires glibc and libstdc++
+
+See the memory.stp file for usage instructions.
