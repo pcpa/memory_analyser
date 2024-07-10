@@ -210,13 +210,10 @@ probe process("/lib64/libc.so.6").function("mremap").return {
     old_code_address = pointer_alloc_addresses_in_code[old_pointer];
     if (old_code_address) {
 	bytes_alloced_in_code_address[old_code_address] -= old_size;
-	/* Avoid problems when mremap is used to reduce an array size */
-	/*
-	if (bytes_alloced_in_code_address[old_code_address] <= 0) {
+	if (bytes_alloced_in_code_address[old_code_address] == 0) {
 	    delete bytes_alloced_in_code_address[old_code_address];
 	    forget(old_code_address);
 	}
-	 */
 	if (verbose)
 	    ++count_freed_in_code_address[old_code_address];
     }
@@ -336,13 +333,10 @@ probe process("/lib64/libc.so.6").function("realloc").return {
 	if (verbose > 1 &&
 	    old_pointer >= break_start && old_pointer < break_end)
 	    break_alloc -= old_size;
-	/* Avoid miscalculation when realloc is used to reduce an array size */
-	/*
-	if (bytes_alloced_in_code_address[old_code_address] <= 0) {
+	if (bytes_alloced_in_code_address[old_code_address] == 0) {
 	    delete bytes_alloced_in_code_address[old_code_address];
 	    forget(old_code_address);
 	}
-	 */
 	if (verbose)
 	    ++count_freed_in_code_address[old_code_address];
     }
@@ -644,25 +638,21 @@ function report() {
 	printf("------------------------------------------------------------------------------------------------\n");
 	foreach (address in bytes_alloced_in_code_address) {
 	    bytes = bytes_alloced_in_code_address[address];
-	    /* bytes might be zero for a realloc'ed pointer that started
-	     * as a malloc call. Checking it here is simpler. */
-	    if (bytes) {
-		total += bytes;
-		if (verbose > 1 &&
-		    allocs[address] != n_mmap &&
-		    allocs[address] != n_mremap)
-		    total_nomap += bytes;
-		printf("%16ld\t%8d-%-8d\t%-16s\t%s",
-		       bytes,
-		       count_alloced_in_code_address[address],
-		       count_freed_in_code_address[address],
-		       allocator(address),
-		       usymfileline(address));
-		/* do not print address twice */
-		if (verbose > 1 && !strtol(code_probe_names[address], 16))
-		    printf(" (%s)", code_probe_names[address]);
-		printf("\n");
-	    }
+	    total += bytes;
+	    if (verbose > 1 &&
+		allocs[address] != n_mmap &&
+		allocs[address] != n_mremap)
+		total_nomap += bytes;
+	    printf("%16ld\t%8d-%-8d\t%-16s\t%s",
+		   bytes,
+		   count_alloced_in_code_address[address],
+		   count_freed_in_code_address[address],
+		   allocator(address),
+		   usymfileline(address));
+	    /* do not print address twice */
+	    if (verbose > 1 && !strtol(code_probe_names[address], 16))
+		printf(" (%s)", code_probe_names[address]);
+	    printf("\n");
 	}
     }
     else {
@@ -670,10 +660,8 @@ function report() {
 	printf("------------------------------------------------\n");
 	foreach (address in bytes_alloced_in_code_address) {
 	    bytes = bytes_alloced_in_code_address[address];
-	    if (bytes) {
-		total += bytes;
-		printf("%16ld\t%s\n", bytes, usymfileline(address));
-	    }
+	    total += bytes;
+	    printf("%16ld\t%s\n", bytes, usymfileline(address));
 	}
     }
     /*   Bogus total is bogus amount of memory not released - it is bogus
