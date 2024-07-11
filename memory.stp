@@ -163,7 +163,7 @@ function handle_watch() {
     print_ubacktrace();
     %(guru_mode != 0 %?
       if (trap_on_watch) raise(%{ SIGTRAP %}) %:
-	  printf("trap_on_trap needs guru mode\n")
+	  printf("trap_on_watch needs guru mode\n")
 	  %);
 }
 
