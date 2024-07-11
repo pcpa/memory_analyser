@@ -115,6 +115,16 @@ global break_alloc = 0;
 /* -Gverbose=1 to print allocator names */
 global verbose = 0;
 
+/* Unless there is a special need, these "watch points" should be direct
+ * variables, instead of a list of values, what would require a hash table
+ * lookup. These are only meaningful with address randomization disabled. */
+/* -Gwatch_address=<address> to print user backtrace when allocating
+ * from the given address */
+global watch_address = 0;
+/* -Gwatch_pointer=<pointer> to print user backtrace when an allocation
+ * returns the given pointer.*/
+global watch_pointer = 0;
+
 /* avoid double stats */
 global news;
 global deletes;
@@ -147,26 +157,36 @@ probe begin {
 probe process("/lib64/libc.so.6").function("brk").return {
     result = @defined($return) ? $return : register("rax");
     if (result == 0) {
-	address = @defined(@entry($arg1)) ?
+	pointer = @defined(@entry($arg1)) ?
 			   @entry($arg1) : @entry(register("rdi"));
-	if (break_start == 0 || address < break_start)
-	    break_start = address;
-	if (break_end == 0 || address > break_end)
-	    break_end = address;
+	if ((pointer && pointer == watch_pointer) || uaddr() == watch_address) {
+	    printf("\nWatch %p:\n",
+		   watch_address ? watch_address : watch_pointer);
+	    print_ubacktrace();
+	}
+	if (break_start == 0 || pointer < break_start)
+	    break_start = pointer;
+	if (break_end == 0 || pointer > break_end)
+	    break_end = pointer;
     }
 }
 
 probe process("/lib64/libc.so.6").function("sbrk").return {
-    address = @defined($return) ? $return : register("rax");
-    if (address != -1) {
+    pointer = @defined($return) ? $return : register("rax");
+    if (pointer != -1) {
+	if ((pointer && pointer == watch_pointer) || uaddr() == watch_address) {
+	    printf("\nWatch %p:\n",
+		   watch_address ? watch_address : watch_pointer);
+	    print_ubacktrace();
+	}
 	/*
 	increment = @defined(@entry($arg1)) ?
 			     @entry($arg1) : @entry(register("rdi"));
 	 */
-	if (break_start == 0 || address < break_start)
-	    break_start = address;
-	if (break_end == 0 || address > break_end)
-	    break_end = address;
+	if (break_start == 0 || pointer < break_start)
+	    break_start = pointer;
+	if (break_end == 0 || pointer > break_end)
+	    break_end = pointer;
     }
 }
 
@@ -182,6 +202,12 @@ probe process("/lib64/libc.so.6").function("mmap").return {
     pointer = @defined($return) ? $return : register("rax");
     if (pointer != -1) {
 	code_address = uaddr();
+	if (code_address == watch_address ||
+	    (pointer && pointer == watch_pointer)) {
+	    printf("\nWatch %p:\n",
+		   watch_address ? watch_address : watch_pointer);
+	    print_ubacktrace();
+	}
 	size = @defined(@entry($arg2)) ?
 			@entry($arg2) : @entry(register("rsi"));
 	bytes_alloced_in_code_address[code_address] += size;
@@ -209,6 +235,12 @@ probe process("/lib64/libc.so.6").function("mremap").return {
     /* inline munmap */
     old_code_address = pointer_alloc_addresses_in_code[old_pointer];
     if (old_code_address) {
+	if (old_code_address == watch_address ||
+	    (old_pointer && old_pointer == watch_pointer)) {
+	    printf("\nWatch %p:\n",
+		   watch_address ? watch_address : watch_pointer);
+	    print_ubacktrace();
+	}
 	bytes_alloced_in_code_address[old_code_address] -= old_size;
 	if (bytes_alloced_in_code_address[old_code_address] == 0) {
 	    delete bytes_alloced_in_code_address[old_code_address];
@@ -221,6 +253,12 @@ probe process("/lib64/libc.so.6").function("mremap").return {
     new_pointer = @defined($return) ? $return : register("rax");
     if (new_pointer != -1) {
 	new_code_address = uaddr();
+	if (new_code_address == watch_address ||
+	    (new_pointer && new_pointer == watch_pointer)) {
+	    printf("\nWatch %p:\n",
+		   watch_address ? watch_address : watch_pointer);
+	    print_ubacktrace();
+	}
 	new_size = @defined(@entry($arg3)) ?
 			    @entry($arg3) : @entry(register("rdx"));
 	bytes_alloced_in_code_address[new_code_address] += new_size;
@@ -253,6 +291,12 @@ probe process("/lib64/libc.so.6").function("munmap") {
     delete pointer_sizes[pointer];
     code_address = pointer_alloc_addresses_in_code[pointer];
     if (code_address) {
+	if (code_address == watch_address ||
+	    (pointer && pointer == watch_pointer)) {
+	    printf("\nWatch %p:\n",
+		   watch_address ? watch_address : watch_pointer);
+	    print_ubacktrace();
+	}
 	bytes_alloced_in_code_address[code_address] -= size;
 	if (bytes_alloced_in_code_address[code_address] <= 0)
 	    delete bytes_alloced_in_code_address[code_address];
@@ -275,6 +319,11 @@ process("/lib64/libc.so.6").function("pvalloc").return	/* deprecated */
     size = @defined(@entry($arg1)) ? @entry($arg1) : @entry(register("rdi"));
     if (size && pointer) {
 	code_address = uaddr();
+	if (code_address == watch_address || pointer == watch_pointer) {
+	    printf("\nWatch %p:\n",
+		   watch_address ? watch_address : watch_pointer);
+	    print_ubacktrace();
+	}
 	bytes_alloced_in_code_address[code_address] += size;
 	pointer_alloc_addresses_in_code[pointer] = code_address;
 	pointer_sizes[pointer] = size;
@@ -299,6 +348,11 @@ probe process("/lib64/libc.so.6").function("calloc").return {
     size *= number * count;
     if (size && pointer) {
 	code_address = uaddr();
+	if (code_address == watch_address || pointer == watch_pointer) {
+	    printf("\nWatch %p:\n",
+		   watch_address ? watch_address : watch_pointer);
+	    print_ubacktrace();
+	}
 	bytes_alloced_in_code_address[code_address] += size;
 	pointer_alloc_addresses_in_code[pointer] = code_address;
 	pointer_sizes[pointer] = size;
@@ -323,9 +377,14 @@ probe process("/lib64/libc.so.6").function("realloc").return {
     new_size	= @defined(@entry($arg2)) ?
 			   @entry($arg2) : @entry(register("rsi"));
     code_address = uaddr();
-    old_size = 0;
     old_code_address = pointer_alloc_addresses_in_code[old_pointer];
     if (old_code_address) {
+	if (old_code_address == watch_address ||
+	    (old_pointer && old_pointer == watch_pointer)) {
+	    printf("\nWatch %p:\n",
+		   watch_address ? watch_address : watch_pointer);
+	    print_ubacktrace();
+	}
 	delete pointer_alloc_addresses_in_code[old_code_address];
 	old_size = pointer_sizes[old_pointer];
 	delete pointer_sizes[old_pointer];
@@ -343,6 +402,11 @@ probe process("/lib64/libc.so.6").function("realloc").return {
     // assume no overflow
     bytes_alloced_in_code_address[code_address] += new_size;
     if (new_pointer) {
+	if (code_address == watch_address || new_pointer == watch_pointer) {
+	    printf("\nWatch %p:\n",
+		   watch_address ? watch_address : watch_pointer);
+	    print_ubacktrace();
+	}
 	pointer_alloc_addresses_in_code[new_pointer] = code_address;
 	pointer_sizes[new_pointer] = new_size;
 	if (verbose) {
@@ -367,11 +431,16 @@ probe process("/lib64/libc.so.6").function("reallocarray").return {
 			   @entry($arg2) : @entry(register("rsi"));
     count	= @defined(@entry($arg3)) ?
 			   @entry($arg3) : @entry(register("rdx"));
-    new_size = number * count;
+     new_size = number * count;
     code_address = uaddr();
-    old_size = 0;
     old_code_address = pointer_alloc_addresses_in_code[old_pointer];
     if (old_code_address) {
+	if (old_code_address == watch_address ||
+	    (old_pointer && old_pointer == watch_pointer)) {
+	    printf("\nWatch %p:\n",
+		   watch_address ? watch_address : watch_pointer);
+	    print_ubacktrace();
+	}
 	delete pointer_alloc_addresses_in_code[old_code_address];
 	old_size = pointer_sizes[old_pointer];
 	delete pointer_sizes[old_pointer];
@@ -392,6 +461,11 @@ probe process("/lib64/libc.so.6").function("reallocarray").return {
     // assume no overflow
     bytes_alloced_in_code_address[code_address] += new_size;
     if (new_pointer) {
+	if (code_address == watch_address || new_pointer == watch_pointer) {
+	    printf("\nWatch %p:\n",
+		   watch_address ? watch_address : watch_pointer);
+	    print_ubacktrace();
+	}
 	pointer_alloc_addresses_in_code[new_pointer] = code_address;
 	pointer_sizes[new_pointer] = new_size;
 	if (verbose) {
@@ -417,6 +491,12 @@ probe process("/lib64/libc.so.6").function("posix_memalign").return {
 				      @entry($arg3) : register("rdx");
 	code_address = uaddr();
 	pointer = user_int64(pointer_to_pointer);
+	if (code_address == watch_address ||
+	    (pointer && pointer == watch_pointer)) {
+	    printf("\nWatch %p:\n",
+		   watch_address ? watch_address : watch_pointer);
+	    print_ubacktrace();
+	}
 	bytes_alloced_in_code_address[code_address] += size;
 	pointer_alloc_addresses_in_code[pointer] = code_address;
 	pointer_sizes[pointer] = size;
@@ -443,6 +523,11 @@ process("/lib64/libc.so.6").function("memalign").return	/* deprecated */
 		       @entry($arg2) : @entry(register("rsi"));
     if (size && pointer) {
 	code_address = uaddr();
+	if (code_address == watch_address || pointer == watch_pointer) {
+	    printf("\nWatch %p:\n",
+		   watch_address ? watch_address : watch_pointer);
+	    print_ubacktrace();
+	}
 	bytes_alloced_in_code_address[code_address] += size;
 	pointer_alloc_addresses_in_code[pointer] = code_address;
 	pointer_sizes[pointer] = size;
@@ -467,7 +552,14 @@ probe process("/lib64/libc.so.6").function("free") {
 	delete pointer_sizes[pointer];
     code_address = pointer_alloc_addresses_in_code[pointer];
     if (code_address) {
-	/* Should be invalid if attaching to process */
+	/* Should be invalid if attaching to process or something
+	 * like an destructor after a dlclose call */
+	if (code_address == watch_address ||
+	    (pointer && pointer == watch_pointer)) {
+	    printf("\nWatch %p:\n",
+		   watch_address ? watch_address : watch_pointer);
+	    print_ubacktrace();
+	}
 	if (size) {
 	    if (verbose) {
 		++count_freed_in_code_address[code_address];
@@ -525,6 +617,11 @@ process("/lib64/libstdc++.so.6").function("_Znwm").return
 		       @entry($arg1) : @entry(register("rdi"));
     if (size && pointer) {
 	code_address = uaddr();
+	if (code_address == watch_address || pointer == watch_pointer) {
+	    printf("\nWatch %p:\n",
+		   watch_address ? watch_address : watch_pointer);
+	    print_ubacktrace();
+	}
 	bytes_alloced_in_code_address[code_address] += size;
 	pointer_alloc_addresses_in_code[pointer] = code_address;
 	pointer_sizes[pointer] = size;
@@ -576,7 +673,14 @@ process("/lib64/libstdc++.so.6").function("_ZdaPvmSt11align_val_t")
 	delete pointer_sizes[pointer];
     code_address = pointer_alloc_addresses_in_code[pointer];
     if (code_address) {
-	/* Should be invalid if attaching to process */
+	/* Should be invalid if attaching to process or something
+	 * like an destructor after a dlclose call */
+	if (code_address == watch_address ||
+	    (pointer && pointer == watch_pointer)) {
+	    printf("\nWatch %p:\n",
+		   watch_address ? watch_address : watch_pointer);
+	    print_ubacktrace();
+	}
 	if (size) {
 	    if (verbose) {
 		++count_freed_in_code_address[code_address];
