@@ -710,8 +710,18 @@ function report() {
 		   allocator(address),
 		   usymfileline(address));
 	    /* do not print address twice */
-	    if (verbose > 1 && !strtol(code_probe_names[address], 16))
-		printf(" (%s)", code_probe_names[address]);
+	    if (verbose > 1) {
+		if (!strtol(code_probe_names[address], 16))
+		    printf(" (%s)", code_probe_names[address]);
+		else
+		    printf("  - ");
+		if (verbose > 2) {
+		    foreach (pointer in pointer_alloc_addresses_in_code) {
+			if (pointer_alloc_addresses_in_code[pointer] == address)
+			    printf(" %p(%d)", pointer, pointer_sizes[pointer]);
+		    }
+		}
+	    }
 	    printf("\n");
 	}
     }
