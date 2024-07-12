@@ -128,6 +128,11 @@ global watch_pointer = 0;
  * is reached. This requires running systemtap in guru mode. */
 global trap_on_watch = 0;
 
+/* realloc probe is called twice in F39 and F40 */
+global realloc_nests = 1;
+/* reallocarray nests with realloc in F39 and F40 */
+global reallocarray_is_realloc = 1;
+
 /* avoid double stats */
 global news;
 global deletes;
@@ -358,6 +363,14 @@ probe process("/lib64/libc.so.6").function("calloc").return {
     }
 }
 
+probe process("/lib64/libc.so.6").function("realloc") {
+    if (realloc_nests) {
+	if (pid() != target() || news[tid()])
+	    next;
+	news[tid()] = 1;
+    }
+}
+
 probe process("/lib64/libc.so.6").function("realloc").return {
     if (pid() != target())
 	next;
@@ -404,54 +417,62 @@ probe process("/lib64/libc.so.6").function("realloc").return {
 	    }
 	}
     }
+    if (realloc_nests)
+	delete news[tid()];
 }
 
 probe process("/lib64/libc.so.6").function("reallocarray").return {
     if (pid() != target())
 	next;
-    new_pointer	= @defined($return) ? $return : register("rax");
-    old_pointer	= @defined(@entry($arg1)) ?
-			   @entry($arg1) : @entry(register("rdi"));
-    number	= @defined(@entry($arg2)) ?
-			   @entry($arg2) : @entry(register("rsi"));
-    count	= @defined(@entry($arg3)) ?
-			   @entry($arg3) : @entry(register("rdx"));
-     new_size = number * count;
-    code_address = uaddr();
-    old_code_address = pointer_alloc_addresses_in_code[old_pointer];
-    if (old_code_address) {
-	handle_watch(old_code_address == watch_address &&
-		     old_code_address != code_address,
-		     old_pointer && old_pointer != new_pointer &&
-		     old_pointer == watch_pointer);
-	delete pointer_alloc_addresses_in_code[old_code_address];
-	old_size = pointer_sizes[old_pointer];
-	delete pointer_sizes[old_pointer];
-	bytes_alloced_in_code_address[old_code_address] -= old_size;
-	if (verbose > 1 &&
-	    old_pointer >= break_start && old_pointer < break_end)
-	    break_alloc -= old_size;
-	if (bytes_alloced_in_code_address[old_code_address] == 0) {
-	    delete bytes_alloced_in_code_address[old_code_address];
-	    forget(old_code_address);
-	}
+    if (reallocarray_is_realloc) {
 	if (verbose)
-	    ++count_freed_in_code_address[old_code_address];
+	    allocs[uaddr()] = n_reallocarray;
     }
-    // assume no overflow
-    bytes_alloced_in_code_address[code_address] += new_size;
-    if (new_pointer) {
-	handle_watch(code_address == watch_address,
-		     new_pointer == watch_pointer);
-	pointer_alloc_addresses_in_code[new_pointer] = code_address;
-	pointer_sizes[new_pointer] = new_size;
-	if (verbose) {
-	    allocs[code_address] = n_reallocarray;
-	    ++count_alloced_in_code_address[code_address];
-	    if (verbose > 1) {
-		code_probe_names[code_address] = probefunc();
-		if (new_pointer >= break_start && new_pointer < break_end)
-		    break_alloc += new_size;
+    else {
+	new_pointer = @defined($return) ? $return : register("rax");
+	old_pointer = @defined(@entry($arg1)) ?
+			       @entry($arg1) : @entry(register("rdi"));
+	number	    = @defined(@entry($arg2)) ?
+			       @entry($arg2) : @entry(register("rsi"));
+	count	    = @defined(@entry($arg3)) ?
+			       @entry($arg3) : @entry(register("rdx"));
+	new_size = number * count;
+	code_address = uaddr();
+	old_code_address = pointer_alloc_addresses_in_code[old_pointer];
+	if (old_code_address) {
+	    handle_watch(old_code_address == watch_address &&
+			 old_code_address != code_address,
+			 old_pointer && old_pointer != new_pointer &&
+			 old_pointer == watch_pointer);
+	    delete pointer_alloc_addresses_in_code[old_code_address];
+	    old_size = pointer_sizes[old_pointer];
+	    delete pointer_sizes[old_pointer];
+	    bytes_alloced_in_code_address[old_code_address] -= old_size;
+	    if (verbose > 1 &&
+		old_pointer >= break_start && old_pointer < break_end)
+		break_alloc -= old_size;
+	    if (bytes_alloced_in_code_address[old_code_address] == 0) {
+		delete bytes_alloced_in_code_address[old_code_address];
+		forget(old_code_address);
+	    }
+	    if (verbose)
+		++count_freed_in_code_address[old_code_address];
+	}
+	// assume no overflow
+	bytes_alloced_in_code_address[code_address] += new_size;
+	if (new_pointer) {
+	    handle_watch(code_address == watch_address,
+			 new_pointer == watch_pointer);
+	    pointer_alloc_addresses_in_code[new_pointer] = code_address;
+	    pointer_sizes[new_pointer] = new_size;
+	    if (verbose) {
+		allocs[code_address] = n_reallocarray;
+		++count_alloced_in_code_address[code_address];
+		if (verbose > 1) {
+		    code_probe_names[code_address] = probefunc();
+		    if (new_pointer >= break_start && new_pointer < break_end)
+			break_alloc += new_size;
+		}
 	    }
 	}
     }
