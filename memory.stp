@@ -427,13 +427,10 @@ probe process("/lib64/libc.so.6").function("reallocarray").return {
 	if (verbose > 1 &&
 	    old_pointer >= break_start && old_pointer < break_end)
 	    break_alloc -= old_size;
-	/* Avoid miscalculation when realloc is used to reduce an array size */
-	/*
-	if (bytes_alloced_in_code_address[old_code_address] <= 0) {
+	if (bytes_alloced_in_code_address[old_code_address] == 0) {
 	    delete bytes_alloced_in_code_address[old_code_address];
 	    forget(old_code_address);
 	}
-	 */
 	if (verbose)
 	    ++count_freed_in_code_address[old_code_address];
     }
