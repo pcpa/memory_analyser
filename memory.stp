@@ -369,8 +369,10 @@ probe process("/lib64/libc.so.6").function("realloc").return {
     code_address = uaddr();
     old_code_address = pointer_alloc_addresses_in_code[old_pointer];
     if (old_code_address) {
-	handle_watch(old_code_address == watch_address,
-		     old_pointer && old_pointer == watch_pointer);
+	handle_watch(old_code_address == watch_address &&
+		     old_code_address != code_address,
+		     old_pointer && old_pointer != new_pointer &&
+		     old_pointer == watch_pointer);
 	delete pointer_alloc_addresses_in_code[old_code_address];
 	old_size = pointer_sizes[old_pointer];
 	delete pointer_sizes[old_pointer];
@@ -418,8 +420,10 @@ probe process("/lib64/libc.so.6").function("reallocarray").return {
     code_address = uaddr();
     old_code_address = pointer_alloc_addresses_in_code[old_pointer];
     if (old_code_address) {
-	handle_watch(old_code_address == watch_address,
-		     old_pointer && old_pointer == watch_pointer);
+	handle_watch(old_code_address == watch_address &&
+		     old_code_address != code_address,
+		     old_pointer && old_pointer != new_pointer &&
+		     old_pointer == watch_pointer);
 	delete pointer_alloc_addresses_in_code[old_code_address];
 	old_size = pointer_sizes[old_pointer];
 	delete pointer_sizes[old_pointer];
