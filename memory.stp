@@ -297,14 +297,16 @@ probe process("/lib64/libc.so.6").function("munmap") {
     if (code_address) {
 	handle_watch(code_address == watch_address,
 		     pointer && pointer == watch_pointer);
-	bytes_alloced_in_code_address[code_address] -= size;
-	if (bytes_alloced_in_code_address[code_address] <= 0)
-	    delete bytes_alloced_in_code_address[code_address];
-	delete pointer_alloc_addresses_in_code[pointer];
-	if (--bytes_alloced_in_code_address[code_address] <= 0) {
-	    delete bytes_alloced_in_code_address[code_address];
-	    forget(code_address);
+	if (size) {
+	    if (verbose)
+		++count_freed_in_code_address[code_address];
+	    bytes_alloced_in_code_address[code_address] -= size;
+	    if (bytes_alloced_in_code_address[code_address] == 0) {
+		delete bytes_alloced_in_code_address[code_address];
+		forget(code_address);
+	    }
 	}
+	delete pointer_alloc_addresses_in_code[pointer];
     }
 }
 
