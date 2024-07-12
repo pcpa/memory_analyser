@@ -51,34 +51,31 @@
 
   Sample output with full verbose mode:
 
-$ sudo stap -DMAXMAPENTRIES=262144 -Gverbose=2 -DSTP_OVERLOAD_THRESHOLD=1073741824LL -DSTP_OVERLOAD_INTERVAL=2147483648LL -DMAXACTION=16384 memory.stp -c /bin/ls
+$ stap -DMAXMAPENTRIES=262144 -Gverbose=3 -DSTP_OVERLOAD_THRESHOLD=1073741824LL -DSTP_OVERLOAD_INTERVAL=2147483648LL -DMAXACTION=65536 memory.stp -c /bin/ls
 Stap ready.
-...
+memory.stp  README
 Stap done.
 
             Size	      Count     	Allocator       	Code Address
 ------------------------------------------------------------------------------------------------
-             166	      15-1       	malloc          	0x7fb554ee660f (strdup)
-       224366320	       1-0       	mmap            	0x7fb554e76752 (_nl_load_locale_from_archive)
-             120	       1-0       	malloc          	0x7fb554e764f4 (_nl_load_locale_from_archive)
-             792	       1-0       	malloc          	0x7fb554e75950 (_nl_intern_locale_data)
-            2864	      11-0       	malloc          	0x7fb554e75863 (_nl_intern_locale_data)
-              12	       1-0       	malloc          	0x7fb554e746ac (new_composite_name)
-              34	       1-0       	malloc          	0x7fb554e78393 (set_binding_values.part.0)
-             112	       2-0       	malloc          	0x55f5ad7249cc
-             128	       1-0       	malloc          	0x55f5ad71c65a (tzalloc)
-           62400	       3-0       	reallocarray    	0x55f5ad7183a7 (main)
-            1156	      90-1       	malloc          	0x55f5ad72453f (xstrdup)
-           27012	       1-0       	mmap            	0x7fb554e7360d (__gconv_load_cache)
-             208	       1-0       	malloc          	0x7fb554e73955 (__gconv_lookup_cache)
-             208	       1-0       	malloc          	0x7fb554e73a33 (__gconv_lookup_cache)
-            6408	       3-0       	reallocarray    	0x55f5ad721f21 (sort_files)
-            5760	       3-0       	reallocarray    	0x55f5ad722c6b
-           77760	       3-0       	reallocarray    	0x55f5ad722cf2
-Bogus Total                                              224551460 (       0xd626224)
-Bogus Break [0x55f5e9cd9000  -  0x55f5e9cfa000] =           135168 (         0x21000)
-Bogus Heap                                                  158128 (         0x269b0)
-Bogus NoMap                                                 158128 (         0x269b0)
+             166	      15-1       	malloc          	0x7f20867f260f (strdup) 0x555d562f62c0(12) 0x555d562f7240(12) 0x555d562f7260(12) 0x555d562f7280(12) 0x555d562f72a0(12) 0x555d562f72c0(12) 0x555d562f72e0(12) 0x555d562f7300(12) 0x555d562f7320(12) 0x555d562f7340(12) 0x555d562f7360(12) 0x555d562f7380(12) 0x555d562f73a0(12) 0x555d562f7410(10)
+       224366320	       1-0       	mmap            	0x7f2086782752 (_nl_load_locale_from_archive) 0x7f2079000000(224366320)
+             120	       1-0       	malloc          	0x7f20867824f4 (_nl_load_locale_from_archive) 0x555d562f62e0(120)
+             792	       1-0       	malloc          	0x7f2086781950 (_nl_intern_locale_data) 0x555d562f6360(792)
+            2864	      11-0       	malloc          	0x7f2086781863 (_nl_intern_locale_data) 0x555d562f6680(104) 0x555d562f66f0(1328) 0x555d562f6c30(208) 0x555d562f6d10(424) 0x555d562f6ec0(96) 0x555d562f6f30(80) 0x555d562f6f90(112) 0x555d562f7010(160) 0x555d562f70c0(96) 0x555d562f7130(72) 0x555d562f7180(184)
+              12	       1-0       	malloc          	0x7f20867806ac (new_composite_name) 0x555d562f73c0(12)
+              34	       1-0       	malloc          	0x7f2086784393 (set_binding_values.part.0) 0x555d562f73e0(34)
+             112	       2-0       	malloc          	0x555d2d3869cc  -  0x555d562f7430(56) 0x555d562f7470(56)
+             128	       1-0       	malloc          	0x555d2d37e65a (tzalloc) 0x555d562f74b0(128)
+           20800	       1-0       	reallocarray    	0x555d2d37a3a7 (main) 0x555d562f7540(20800)
+              18	       3-1       	malloc          	0x555d2d38653f (xstrdup) 0x555d56304720(7) 0x555d56304740(11)
+              48	       1-0       	reallocarray    	0x555d2d383f21 (sort_files) 0x555d562fc6e0(48)
+              96	       1-0       	reallocarray    	0x555d2d384c9c  -  0x555d562fc720(96)
+              80	       1-0       	reallocarray    	0x555d2d384cf2  -  0x555d562fc790(80)
+Bogus Total                                              224391590 (       0xd5ff1a6)
+Bogus Break [0x555d562f6000  -  0x555d56317000] =           135168 (         0x21000)
+Bogus Heap                                                   25270 (          0x62b6)
+Bogus NoMap                                                  25270 (          0x62b6)
 
   Bogus Total is accounted memory not released
   Bogus Break is accounted memory in main arena
