@@ -367,14 +367,6 @@ probe process("/lib64/libc.so.6").function("calloc").return {
     }
 }
 
-probe process("/lib64/libc.so.6").function("realloc") {
-    if (realloc_null_is_malloc) {
-	if (pid() != target() || news[tid()])
-	    next;
-	news[tid()] = 1;
-    }
-}
-
 function common_realloc(new_pointer, old_pointer, new_size, kind) {
     code_address = uaddr();
     old_code_address = pointer_alloc_addresses_in_code[old_pointer];
@@ -417,6 +409,14 @@ function common_realloc(new_pointer, old_pointer, new_size, kind) {
 
 }
 
+probe process("/lib64/libc.so.6").function("realloc") {
+    if (1 || realloc_null_is_malloc) {
+	if (pid() != target() || news[tid()])
+	    next;
+	news[tid()] = 1;
+    }
+}
+
 probe process("/lib64/libc.so.6").function("realloc").return {
     if (pid() != target())
 	next;
@@ -433,7 +433,7 @@ probe process("/lib64/libc.so.6").function("realloc").return {
 probe process("/lib64/libc.so.6").function("reallocarray").return {
     if (pid() != target())
 	next;
-    if (reallocarray_is_realloc) {
+    if (1 || reallocarray_is_realloc) {
 	if (verbose)
 	    allocs[uaddr()] = n_reallocarray;
     }
