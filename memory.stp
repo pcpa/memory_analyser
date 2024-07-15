@@ -125,9 +125,9 @@ global watch_pointer = 0;
  * is reached. This requires running systemtap in guru mode. */
 global trap_on_watch = 0;
 
-/* realloc probe is called twice in F39 and F40 */
-global realloc_nests = 1;
-/* reallocarray nests with realloc in F39 and F40 */
+/* avoid realloc return probe computed twice */
+global realloc_null_is_malloc = 1;
+/* avoid reallocarray and realloc return probes being computed */
 global reallocarray_is_realloc = 1;
 
 /* avoid double stats */
@@ -363,7 +363,7 @@ probe process("/lib64/libc.so.6").function("calloc").return {
 }
 
 probe process("/lib64/libc.so.6").function("realloc") {
-    if (realloc_nests) {
+    if (realloc_null_is_malloc) {
 	if (pid() != target() || news[tid()])
 	    next;
 	news[tid()] = 1;
@@ -416,7 +416,7 @@ probe process("/lib64/libc.so.6").function("realloc").return {
 	    }
 	}
     }
-    if (realloc_nests)
+    if (realloc_null_is_malloc)
 	delete news[tid()];
 }
 
