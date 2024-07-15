@@ -311,6 +311,25 @@ probe process("/lib64/libc.so.6").function("munmap") {
     }
 }
 
+function common_malloc(pointer, size, kind) {
+    if (size && pointer) {
+	code_address = uaddr();
+	handle_watch(code_address == watch_address, pointer == watch_pointer);
+	bytes_alloced_in_code_address[code_address] += size;
+	pointer_alloc_addresses_in_code[pointer] = code_address;
+	pointer_sizes[pointer] = size;
+	if (verbose) {
+	    allocs[code_address] = kind;
+	    ++count_alloced_in_code_address[code_address];
+	    if (verbose > 1) {
+		code_probe_names[code_address] = probefunc();
+		if (pointer >= break_start && pointer < break_end)
+		    break_alloc += size;
+	    }
+	}
+    }
+}
+
 probe
 process("/lib64/libc.so.6").function("malloc").return,
 process("/lib64/libc.so.6").function("valloc").return,	/* deprecated */
@@ -320,22 +339,7 @@ process("/lib64/libc.so.6").function("pvalloc").return	/* deprecated */
 	next;
     pointer = @defined($return) ? $return : register("rax");
     size = @defined(@entry($arg1)) ? @entry($arg1) : @entry(register("rdi"));
-    if (size && pointer) {
-	code_address = uaddr();
-	handle_watch(code_address == watch_address, pointer == watch_pointer);
-	bytes_alloced_in_code_address[code_address] += size;
-	pointer_alloc_addresses_in_code[pointer] = code_address;
-	pointer_sizes[pointer] = size;
-	if (verbose) {
-	    allocs[code_address] = n_malloc;
-	    ++count_alloced_in_code_address[code_address];
-	    if (verbose > 1) {
-		code_probe_names[code_address] = probefunc();
-		if (pointer >= break_start && pointer < break_end)
-		    break_alloc += size;
-	    }
-	}
-    }
+    common_malloc(pointer, size, n_malloc);
 }
 
 probe process("/lib64/libc.so.6").function("calloc").return {
@@ -371,14 +375,7 @@ probe process("/lib64/libc.so.6").function("realloc") {
     }
 }
 
-probe process("/lib64/libc.so.6").function("realloc").return {
-    if (pid() != target())
-	next;
-    new_pointer	= @defined($return) ? $return : register("rax");
-    old_pointer = @defined(@entry($arg1)) ?
-			   @entry($arg1) : @entry(register("rdi"));
-    new_size	= @defined(@entry($arg2)) ?
-			   @entry($arg2) : @entry(register("rsi"));
+function common_realloc(new_pointer, old_pointer, new_size, kind) {
     code_address = uaddr();
     old_code_address = pointer_alloc_addresses_in_code[old_pointer];
     if (old_code_address) {
@@ -408,7 +405,7 @@ probe process("/lib64/libc.so.6").function("realloc").return {
 	pointer_alloc_addresses_in_code[new_pointer] = code_address;
 	pointer_sizes[new_pointer] = new_size;
 	if (verbose) {
-	    allocs[code_address] = n_realloc;
+	    allocs[code_address] = kind;
 	    ++count_alloced_in_code_address[code_address];
 	    if (verbose > 1) {
 		code_probe_names[code_address] = probefunc();
@@ -417,6 +414,18 @@ probe process("/lib64/libc.so.6").function("realloc").return {
 	    }
 	}
     }
+
+}
+
+probe process("/lib64/libc.so.6").function("realloc").return {
+    if (pid() != target())
+	next;
+    new_pointer	= @defined($return) ? $return : register("rax");
+    old_pointer = @defined(@entry($arg1)) ?
+			   @entry($arg1) : @entry(register("rdi"));
+    new_size	= @defined(@entry($arg2)) ?
+			   @entry($arg2) : @entry(register("rsi"));
+    common_realloc(new_pointer, old_pointer, new_size, n_realloc);
     if (realloc_null_is_malloc)
 	delete news[tid()];
 }
@@ -437,44 +446,7 @@ probe process("/lib64/libc.so.6").function("reallocarray").return {
 	count	    = @defined(@entry($arg3)) ?
 			       @entry($arg3) : @entry(register("rdx"));
 	new_size = number * count;
-	code_address = uaddr();
-	old_code_address = pointer_alloc_addresses_in_code[old_pointer];
-	if (old_code_address) {
-	    handle_watch(old_code_address == watch_address &&
-			 old_code_address != code_address,
-			 old_pointer && old_pointer != new_pointer &&
-			 old_pointer == watch_pointer);
-	    delete pointer_alloc_addresses_in_code[old_code_address];
-	    old_size = pointer_sizes[old_pointer];
-	    delete pointer_sizes[old_pointer];
-	    bytes_alloced_in_code_address[old_code_address] -= old_size;
-	    if (verbose > 1 &&
-		old_pointer >= break_start && old_pointer < break_end)
-		break_alloc -= old_size;
-	    if (bytes_alloced_in_code_address[old_code_address] == 0) {
-		delete bytes_alloced_in_code_address[old_code_address];
-		forget(old_code_address);
-	    }
-	    if (verbose)
-		++count_freed_in_code_address[old_code_address];
-	}
-	// assume no overflow
-	bytes_alloced_in_code_address[code_address] += new_size;
-	if (new_pointer) {
-	    handle_watch(code_address == watch_address,
-			 new_pointer == watch_pointer);
-	    pointer_alloc_addresses_in_code[new_pointer] = code_address;
-	    pointer_sizes[new_pointer] = new_size;
-	    if (verbose) {
-		allocs[code_address] = n_reallocarray;
-		++count_alloced_in_code_address[code_address];
-		if (verbose > 1) {
-		    code_probe_names[code_address] = probefunc();
-		    if (new_pointer >= break_start && new_pointer < break_end)
-			break_alloc += new_size;
-		}
-	    }
-	}
+	common_realloc(new_pointer, old_pointer, new_size, n_reallocarray);
     }
 }
 
@@ -533,10 +505,7 @@ process("/lib64/libc.so.6").function("memalign").return	/* deprecated */
     }
 }
 
-probe process("/lib64/libc.so.6").function("free") {
-    if (pid() != target() || deletes[tid()])
-	next;
-    pointer = @defined($arg1) ? $arg1 : register("rdi");
+function common_free(pointer) {
     size = pointer_sizes[pointer];
     if (pointer)
 	delete pointer_sizes[pointer];
@@ -561,6 +530,13 @@ probe process("/lib64/libc.so.6").function("free") {
 	}
 	delete pointer_alloc_addresses_in_code[pointer];
     }
+}
+
+probe process("/lib64/libc.so.6").function("free") {
+    if (pid() != target() || deletes[tid()])
+	next;
+    pointer = @defined($arg1) ? $arg1 : register("rdi");
+    common_free(pointer);
 }
 
 probe
@@ -601,22 +577,7 @@ process("/lib64/libstdc++.so.6").function("_Znwm").return
     pointer = @defined($return) ? $return : register("rax");
     size    = @defined(@entry($arg1)) ?
 		       @entry($arg1) : @entry(register("rdi"));
-    if (size && pointer) {
-	code_address = uaddr();
-	handle_watch(code_address == watch_address, pointer == watch_pointer);
-	bytes_alloced_in_code_address[code_address] += size;
-	pointer_alloc_addresses_in_code[pointer] = code_address;
-	pointer_sizes[pointer] = size;
-	if (verbose) {
-	    allocs[code_address] = n_new;
-	    ++count_alloced_in_code_address[code_address];
-	    if (verbose > 1) {
-		code_probe_names[code_address] = probefunc();
-		if (pointer >= break_start && pointer < break_end)
-		    break_alloc += size;
-	    }
-	}
-    }
+    common_malloc(pointer, size, n_new);
     delete news[tid()];
 }
 
@@ -649,31 +610,8 @@ process("/lib64/libstdc++.so.6").function("_ZdaPvmSt11align_val_t")
     if (pid() != target())
 	next;
     deletes[tid()] = 1;
-    pointer = register("rdi");
-    size = pointer_sizes[pointer];
-    if (pointer)
-	delete pointer_sizes[pointer];
-    code_address = pointer_alloc_addresses_in_code[pointer];
-    if (code_address) {
-	/* Should be invalid if attaching to process or something
-	 * like an destructor after a dlclose call */
-	handle_watch(code_address == watch_address,
-		     pointer && pointer == watch_pointer);
-	if (size) {
-	    if (verbose) {
-		++count_freed_in_code_address[code_address];
-		if (verbose > 1 &&
-		    pointer >= break_start && pointer < break_end)
-		    break_alloc -= size;
-	    }
-	    bytes_alloced_in_code_address[code_address] -= size;
-	    if (bytes_alloced_in_code_address[code_address] == 0) {
-		delete bytes_alloced_in_code_address[code_address];
-		forget(code_address);
-	    }
-	}
-	delete pointer_alloc_addresses_in_code[pointer];
-    }
+    pointer = @defined($arg1) ? $arg1 : register("rdi");
+    common_free(pointer);
 }
 
 probe
