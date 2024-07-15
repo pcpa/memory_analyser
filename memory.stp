@@ -540,12 +540,11 @@ probe process("/lib64/libc.so.6").function("free") {
 }
 
 probe
+/*
 // operator new[](unsigned long, std::align_val_t)
 process("/lib64/libstdc++.so.6").function("_ZnamSt11align_val_t"),
 // operator new(unsigned long, std::align_val_t, std::nothrow_t const&)
 process("/lib64/libstdc++.so.6").function("_ZnwmSt11align_val_tRKSt9nothrow_t"),
-// operator new(unsigned long, std::align_val_t)
-process("/lib64/libstdc++.so.6").function("_ZnwmSt11align_val_t"),
 // operator new(unsigned long, std::nothrow_t const&)
 process("/lib64/libstdc++.so.6").function("_ZnwmRKSt9nothrow_t"),
 // operator new[](unsigned long, std::align_val_t, std::nothrow_t const&)
@@ -554,7 +553,10 @@ process("/lib64/libstdc++.so.6").function("_ZnamSt11align_val_tRKSt9nothrow_t"),
 process("/lib64/libstdc++.so.6").function("_Znam"),
 // operator new[](unsigned long, std::nothrow_t const&)
 process("/lib64/libstdc++.so.6").function("_ZnamRKSt9nothrow_t"),
-// operator new(unsigned long)
+ */
+// operator new(unsigned long, std::align_val_t) -- posix_memalign
+process("/lib64/libstdc++.so.6").function("_ZnwmSt11align_val_t"),
+// operator new(unsigned long) -- malloc
 process("/lib64/libstdc++.so.6").function("_Znwm")
 {
     if (pid() != target())
@@ -563,13 +565,15 @@ process("/lib64/libstdc++.so.6").function("_Znwm")
 }
 
 probe
-process("/lib64/libstdc++.so.6").function("_ZnamSt11align_val_t").return,
-process("/lib64/libstdc++.so.6").function("_ZnwmSt11align_val_tRKSt9nothrow_t").return,
+/*
 process("/lib64/libstdc++.so.6").function("_ZnwmSt11align_val_t").return,
 process("/lib64/libstdc++.so.6").function("_ZnwmRKSt9nothrow_t").return,
+process("/lib64/libstdc++.so.6").function("_ZnwmSt11align_val_tRKSt9nothrow_t").return,
 process("/lib64/libstdc++.so.6").function("_ZnamSt11align_val_tRKSt9nothrow_t").return,
 process("/lib64/libstdc++.so.6").function("_Znam").return,
 process("/lib64/libstdc++.so.6").function("_ZnamRKSt9nothrow_t").return,
+ */
+process("/lib64/libstdc++.so.6").function("_ZnamSt11align_val_t").return,
 process("/lib64/libstdc++.so.6").function("_Znwm").return
 {
     if (pid() != target())
@@ -582,6 +586,7 @@ process("/lib64/libstdc++.so.6").function("_Znwm").return
 }
 
 probe
+/*
 // operator delete(void*, std::align_val_t, std::nothrow_t const&)
 process("/lib64/libstdc++.so.6").function("_ZdlPvSt11align_val_tRKSt9nothrow_t"),
 // operator delete(void*, unsigned long)
@@ -594,8 +599,6 @@ process("/lib64/libstdc++.so.6").function("_ZdlPvRKSt9nothrow_t"),
 process("/lib64/libstdc++.so.6").function("_ZdaPvSt11align_val_tRKSt9nothrow_t"),
 // operator delete(void*, unsigned long, std::align_val_t)
 process("/lib64/libstdc++.so.6").function("_ZdlPvmSt11align_val_t"),
-// operator delete(void*)
-process("/lib64/libstdc++.so.6").function("_ZdlPv"),
 // operator delete[](void*)
 process("/lib64/libstdc++.so.6").function("_ZdaPv"),
 // operator delete(void*, std::align_val_t)
@@ -605,7 +608,10 @@ process("/lib64/libstdc++.so.6").function("_ZdaPvSt11align_val_t"),
 // operator delete[](void*, unsigned long)
 process("/lib64/libstdc++.so.6").function("_ZdaPvm"),
 // operator delete[](void*, unsigned long, std::align_val_t)
-process("/lib64/libstdc++.so.6").function("_ZdaPvmSt11align_val_t")
+process("/lib64/libstdc++.so.6").function("_ZdaPvmSt11align_val_t"),
+ */
+// operator delete(void*) -- free
+process("/lib64/libstdc++.so.6").function("_ZdlPv")
 {
     if (pid() != target())
 	next;
@@ -615,18 +621,20 @@ process("/lib64/libstdc++.so.6").function("_ZdaPvmSt11align_val_t")
 }
 
 probe
+/*
 process("/lib64/libstdc++.so.6").function("_ZdlPvSt11align_val_tRKSt9nothrow_t").return,
 process("/lib64/libstdc++.so.6").function("_ZdlPvm").return,
 process("/lib64/libstdc++.so.6").function("_ZdaPvRKSt9nothrow_t").return,
 process("/lib64/libstdc++.so.6").function("_ZdlPvRKSt9nothrow_t").return,
 process("/lib64/libstdc++.so.6").function("_ZdaPvSt11align_val_tRKSt9nothrow_t").return,
 process("/lib64/libstdc++.so.6").function("_ZdlPvmSt11align_val_t").return,
-process("/lib64/libstdc++.so.6").function("_ZdlPv").return,
 process("/lib64/libstdc++.so.6").function("_ZdaPv").return,
 process("/lib64/libstdc++.so.6").function("_ZdlPvSt11align_val_t").return,
 process("/lib64/libstdc++.so.6").function("_ZdaPvSt11align_val_t").return,
 process("/lib64/libstdc++.so.6").function("_ZdaPvm").return,
-process("/lib64/libstdc++.so.6").function("_ZdaPvmSt11align_val_t").return
+process("/lib64/libstdc++.so.6").function("_ZdaPvmSt11align_val_t").return,
+ */
+process("/lib64/libstdc++.so.6").function("_ZdlPv").return
 {
     if (pid() != target())
 	next;
@@ -729,6 +737,8 @@ probe end {
 	delete allocs;
 	if (verbose > 1) {
 	    delete code_probe_names;
+	    /* Should be empty or only include entries where
+	     * bytes_alloced_in_code_address[detailed_report[address]] == 0 */
 	    if (verbose > 2)
 		delete detailed_report;
 	}
