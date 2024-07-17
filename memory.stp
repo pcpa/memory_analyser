@@ -51,7 +51,7 @@
 
   Sample output with full verbose mode:
 
-$ stap -DMAXMAPENTRIES=262144 -Gverbose=3 -DSTP_OVERLOAD_THRESHOLD=1073741824LL -DSTP_OVERLOAD_INTERVAL=2147483648LL -DMAXACTION=65536 memory.stp -c /bin/ls
+$ stap -DMAXMAPENTRIES=262144 -Gverbose=3 -DSTP_OVERLOAD_THRESHOLD=1073741824LL -DSTP_OVERLOAD_INTERVAL=2147483648LL -DMAXACTION=65536 -DMAXSTRINGLEN=4096 memory.stp -c /bin/ls
 Stap ready.
 memory.stp  README
 Stap done.
@@ -661,6 +661,7 @@ function report() {
     total = 0;
     total_nomap = 0;
     break_range = break_end - break_start;
+    truncate = 0;
     if (verbose) {
 	if (verbose > 2) {
 	    foreach (pointer in pointer_alloc_addresses_in_code)
@@ -690,6 +691,12 @@ function report() {
 		    printf("  - ");
 		if (verbose > 2) {
 		    printf("%s", detailed_report[address]);
+		    length = strlen(detailed_report[address]);
+		    detailed_report[address] .= " ";
+		    if (length == strlen(detailed_report[address])) {
+			truncate = length;
+			printf("...");
+		    }
 		    delete detailed_report[address];
 		}
 	    }
@@ -716,6 +723,9 @@ function report() {
     if (verbose > 1) {
 	printf("Bogus Heap  %54ld (%16p)\n", break_alloc, break_alloc);
 	printf("Bogus NoMap %54ld (%16p)", total_nomap, total_nomap);
+	/* Current MAXSTRINGLEN should be truncate + 1 */
+	if (verbose > 2 && truncate)
+	    printf("\nThere were truncated reports (ending with ...). Rerun with -DMAXSTRINGLEN=N with N larger than %ld for more data.", truncate);
     }
 }
 
