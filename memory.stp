@@ -694,7 +694,7 @@ function report() {
 		    length = strlen(detailed_report[address]);
 		    detailed_report[address] .= " ";
 		    if (length == strlen(detailed_report[address])) {
-			truncate = length;
+			truncate = length + 1;
 			printf("...");
 		    }
 		    delete detailed_report[address];
