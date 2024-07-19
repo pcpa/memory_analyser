@@ -104,6 +104,9 @@ global bytes_alloced_in_code_address;
 global pointer_alloc_addresses_in_code;
 global pointer_sizes;
 global detailed_report;
+global string_truncate_length;
+global process_name = "";
+global process_arguments, exec_process_arguments;
 
 /* Bogus malloc main_arena area information */
 global break_start;
@@ -157,7 +160,7 @@ global n_aligned_alloc = 8;
 global n_new = 9;
 
 probe begin {
-    printf("Stap ready.\n")
+    printf("Stap ready.\n");
 }
 
 function handle_watch(handle_address, handle_pointer) {
@@ -665,14 +668,14 @@ function report() {
     total = 0;
     total_nomap = 0;
     break_range = break_end - break_start;
-    truncate = 0;
+    printf("\nReport for %s (%s)\n", process_name, process_arguments);
     if (verbose) {
 	if (verbose > 2) {
 	    foreach (pointer in pointer_alloc_addresses_in_code)
 		detailed_report[pointer_alloc_addresses_in_code[pointer]] .=
 		    sprintf(" %p(%d)", pointer, pointer_sizes[pointer]);
 	}
-	printf("\n%16s\t      Count     \t%-16s\t%s\n", "Size", "Allocator", "Code Address");
+	printf("%16s\t      Count     \t%-16s\t%s\n", "Size", "Allocator", "Code Address");
 	printf("------------------------------------------------------------------------------------------------\n");
 	foreach (address in bytes_alloced_in_code_address) {
 	    bytes = bytes_alloced_in_code_address[address];
@@ -698,7 +701,7 @@ function report() {
 		    length = strlen(detailed_report[address]);
 		    detailed_report[address] .= " ";
 		    if (length == strlen(detailed_report[address])) {
-			truncate = length + 1;
+			string_truncate_length = length + 1;
 			printf("...");
 		    }
 		    delete detailed_report[address];
@@ -708,7 +711,7 @@ function report() {
 	}
     }
     else {
-	printf("\n%16s\t%s\n", "Size", "Code Address");
+	printf("%16s\t%s\n", "Size", "Code Address");
 	printf("------------------------------------------------\n");
 	foreach (address in bytes_alloced_in_code_address) {
 	    bytes = bytes_alloced_in_code_address[address];
@@ -726,10 +729,7 @@ function report() {
 	   break_range, break_range);
     if (verbose > 1) {
 	printf("Bogus Heap  %54ld (%16p)\n", break_alloc, break_alloc);
-	printf("Bogus NoMap %54ld (%16p)", total_nomap, total_nomap);
-	/* Current MAXSTRINGLEN should be truncate + 1 */
-	if (verbose > 2 && truncate)
-	    printf("\nThere were truncated reports (ending with ...). Rerun with -DMAXSTRINGLEN=N with N larger than %ld for more data.", truncate);
+	printf("Bogus NoMap %54ld (%16p)\n", total_nomap, total_nomap);
     }
 }
 
@@ -738,13 +738,11 @@ probe signal.send {
 	report();
 }
 
-probe end {
-    printf("Stap done.\n");
-    report();
-    printf("\n");
+function reset() {
     delete pointer_alloc_addresses_in_code;
     delete pointer_sizes;
     if (verbose) {
+	delete bytes_alloced_in_code_address;
 	delete count_alloced_in_code_address;
 	delete count_freed_in_code_address;
 	delete code_probe_names;
@@ -757,4 +755,34 @@ probe end {
 		delete detailed_report;
 	}
     }
+    break_start = break_end = break_alloc = 0;
+
+}
+
+probe kprocess.exec {
+    if (pid() != target())
+	next;
+    exec_process_arguments = argstr;
+}
+
+probe kprocess.exec_complete {
+    if (pid() != target())
+	next;
+    if (success) {
+	if (process_name != "") {
+	    report();
+	    reset();
+	}
+	process_name = execname();
+	process_arguments = exec_process_arguments;
+    }
+}
+
+probe end {
+    report();
+    if (verbose > 2 && string_truncate_length)
+	printf("There were truncated reports (ending with ...). Rerun with -DMAXSTRINGLEN=N with N larger than %ld for more data.\n",
+	       string_truncate_length);
+    printf("Stap done.\n");
+    reset();
 }
