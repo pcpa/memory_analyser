@@ -178,6 +178,8 @@ function handle_watch(handle_address, handle_pointer) {
 }
 
 probe process("/lib64/libc.so.6").function("brk").return {
+    if (pid() != target())
+	next;
     result = @defined($return) ? $return : register("rax");
     if (result == 0) {
 	pointer = @defined(@entry($arg1)) ?
@@ -192,6 +194,8 @@ probe process("/lib64/libc.so.6").function("brk").return {
 }
 
 probe process("/lib64/libc.so.6").function("sbrk").return {
+    if (pid() != target())
+	next;
     pointer = @defined($return) ? $return : register("rax");
     if (pointer != -1) {
 	handle_watch(uaddr() == watch_address,
