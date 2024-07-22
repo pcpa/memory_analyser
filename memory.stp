@@ -128,6 +128,19 @@ global watch_pointer = 0;
 /* -Gtrap_on_watch=1 to raise SIGTRAP if one of the pseudo watchpoints
  * is reached. This requires running systemtap in guru mode. */
 global trap_on_watch = 0;
+/* -Gshow_invalid=1 to print an backtrace if an invalid pointer is passed
+ * to free/mremap/realloc. Note that this obviously should only be used
+ * if not attaching to a running process, otherwise it might trap on
+ * valid data. */
+global show_invalid = -1;
+/* -Gtrap_on_invalid=1 to raise SIGTRAP if an invalid pointer is passed
+ * to free/mremap/realloc. Note that this obviously should only be used
+ * if not attaching to a running process, otherwise it might trap on
+ * valid data. */
+global trap_on_invalid = 0;
+
+/* Start pretending it did attach to running process. Changed in begin probe, */
+global attached = 1;
 
 /* avoid realloc return probe computed twice */
 global realloc_null_is_malloc = 1;
@@ -160,6 +173,15 @@ global n_aligned_alloc = 8;
 global n_new = 9;
 
 probe begin {
+    pid = target();
+    %( $# < 1 %? attached = 0 %: pid = $1 %);
+    task = pid2task(pid);
+    if (task == 0)
+	error(sprintf("Process-id %d is invalid, please provide valid PID as $1 or -x PID", pid));
+    if (!attached && trap_on_invalid)
+	printf("-Gtrap_on_invalid might generate false positives when attaching to a pid.");
+    if (show_invalid == -1)
+	show_invalid = trap_on_invalid || !attached;
     printf("Stap ready.\n");
 }
 
@@ -178,6 +200,17 @@ function handle_watch(handle_address, handle_pointer) {
       if (trap_on_watch) raise(%{ SIGTRAP %}) %:
 	  if (trap_on_watch) printf("trap_on_watch needs guru mode\n")
 	  %);
+}
+
+function handle_invalid(pointer) {
+    if (show_invalid) {
+	printf("\nInvalid/unknown pointer %p\n", pointer);
+	print_ubacktrace();
+	%(guru_mode != 0 %?
+	  if (trap_on_invalid) raise(%{ SIGTRAP %}) %:
+	      if (trap_on_invalid) printf("trap_on_invalid needs guru mode\n")
+	  %);
+    }
 }
 
 probe process("/lib64/libc.so.6").function("brk").return {
@@ -284,6 +317,8 @@ probe process("/lib64/libc.so.6").function("mremap").return {
 		code_probe_names[new_code_address] = probefunc();
 	}
     }
+    else
+	handle_invalid(old_pointer);
 }
 
 probe process("/lib64/libc.so.6").function("munmap") {
@@ -300,6 +335,10 @@ probe process("/lib64/libc.so.6").function("munmap") {
 	print_ubacktrace();
     }
     */
+    if (pointer_sizes[pointer])
+	delete pointer_sizes[pointer];
+    else
+	handle_invalid(pointer);
     delete pointer_sizes[pointer];
     code_address = pointer_alloc_addresses_in_code[pointer];
     if (code_address) {
@@ -537,6 +576,8 @@ function common_free(pointer) {
 	}
 	delete pointer_alloc_addresses_in_code[pointer];
     }
+    else if (pointer)
+	handle_invalid(pointer);
 }
 
 probe process("/lib64/libc.so.6").function("free") {
