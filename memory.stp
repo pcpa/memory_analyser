@@ -133,11 +133,40 @@ global trap_on_watch = 0;
  * if not attaching to a running process, otherwise it might trap on
  * valid data. */
 global show_invalid = -1;
+/* -Gshow_non_portable=1 to print a backtrace if passing zero as size for
+ * memory allocation. Glibc returns a valid pointer, but other libcs
+ * can return NULL. */
+global show_non_portable = 0;
 /* -Gtrap_on_invalid=1 to raise SIGTRAP if an invalid pointer is passed
  * to free/mremap/realloc. Note that this obviously should only be used
  * if not attaching to a running process, otherwise it might trap on
  * valid data. */
 global trap_on_invalid = 0;
+/* -Gworkaround_glibc=0 to possibly show invalid/unknown pointer, in the
+ * pattern:
+
+Invalid/unknown pointer 0x7fffd0001150
+ 0x7fffed369360 : cfree@GLIBC_2.2.5+0x0/0x110 [/usr/lib64/libc.so.6]
+ 0x7fffed3694cb : __malloc_arena_thread_freeres+0x5b/0x150 [/usr/lib64/libc.so.6]
+ 0x7fffed35870f : start_thread+0x16f/0x480 [/usr/lib64/libc.so.6]
+ 0x7fffed3dfa5c : __GI___clone3+0x2c/0x50 [/usr/lib64/libc.so.6]
+
+  This happens because __malloc_arena_thread_freeres() calls
+  tcache_thread_shutdown(), that has:
+
+    tcache_perthread_struct *tcache_tmp = tcache;
+and after releasing all tcache entries with _libc_free() finally calls:
+  __libc_free (tcache_tmp);
+
+ The problem is that malloc/malloc.c has:
+static __thread tcache_perthread_struct *tcache = NULL;
+and tcache_init() calls _int_malloc(), not _libc_malloc() to initialize it.
+
+  Another case is munmap call from a block directly allocated with a mmap
+sycall, when creating a new arena. A warning would be printed for every
+arena created.
+ */
+global workaround_glibc = 1;
 
 /* Start pretending it did attach to running process. Changed in begin probe, */
 global attached = 1;
@@ -204,12 +233,28 @@ function handle_watch(handle_address, handle_pointer) {
 
 function handle_invalid(pointer) {
     if (show_invalid) {
+	if (workaround_glibc) {
+	    /* The tcache per thread variable is free'd with a free call, but
+	     * allocated with a short-circuit call to _int_malloc.
+	     */
+	    backtrace = sprint_ubacktrace();
+	    if (backtrace !~ "__malloc_arena_thread_freeres+" ||
+		(backtrace !~ "__munmap+" && backtrace !~ "alloc_new_heap+"))
+		return;
+	}
 	printf("\nInvalid/unknown pointer %p\n", pointer);
 	print_ubacktrace();
 	%(guru_mode != 0 %?
 	  if (trap_on_invalid) raise(%{ SIGTRAP %}) %:
 	      if (trap_on_invalid) printf("trap_on_invalid needs guru mode\n")
-	  %);
+		  %);
+    }
+}
+
+function handle_non_portable(pointer) {
+    if (show_non_portable) {
+	printf("\nNon portable zero sized allocation %p\n", pointer);
+	print_ubacktrace();
     }
 }
 
@@ -358,7 +403,9 @@ probe process("/lib64/libc.so.6").function("munmap") {
 }
 
 function common_malloc(pointer, size, kind) {
-    if (size && pointer) {
+    if (pointer) {
+	if (size == 0)
+	    handle_non_portable(pointer);
 	code_address = uaddr();
 	handle_watch(code_address == watch_address, pointer == watch_pointer);
 	bytes_alloced_in_code_address[code_address] += size;
@@ -395,7 +442,9 @@ probe process("/lib64/libc.so.6").function("calloc").return {
     number  = @defined(@entry($arg1)) ? @entry($arg1) : @entry(register("rdi"));
     count   = @defined(@entry($arg2)) ? @entry($arg2) : @entry(register("rsi"));
     size = number * count;
-    if (size && pointer) {
+    if (pointer) {
+	if (size == 0)
+	    handle_non_portable(pointer);
 	code_address = uaddr();
 	handle_watch(code_address == watch_address, pointer == watch_pointer);
 	bytes_alloced_in_code_address[code_address] += size;
@@ -438,6 +487,8 @@ function common_realloc(new_pointer, old_pointer, new_size, kind) {
     // assume no overflow
     bytes_alloced_in_code_address[code_address] += new_size;
     if (new_pointer) {
+	if (new_size == 0)
+	    handle_non_portable(new_pointer);
 	handle_watch(code_address == watch_address,
 		     new_pointer == watch_pointer);
 	pointer_alloc_addresses_in_code[new_pointer] = code_address;
@@ -452,7 +503,6 @@ function common_realloc(new_pointer, old_pointer, new_size, kind) {
 	    }
 	}
     }
-
 }
 
 probe process("/lib64/libc.so.6").function("realloc") {
