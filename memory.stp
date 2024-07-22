@@ -355,7 +355,7 @@ probe process("/lib64/libc.so.6").function("calloc").return {
     pointer = @defined($return) ? $return : register("rax");
     number  = @defined(@entry($arg1)) ? @entry($arg1) : @entry(register("rdi"));
     count   = @defined(@entry($arg2)) ? @entry($arg2) : @entry(register("rsi"));
-    size *= number * count;
+    size = number * count;
     if (size && pointer) {
 	code_address = uaddr();
 	handle_watch(code_address == watch_address, pointer == watch_pointer);
