@@ -867,7 +867,8 @@ probe signal.send {
 }
 
 probe signal.handle {
-    if (pid() != target())
+    if (pid() != target() || sig_name == "SIGTRAP" ||
+	sig_name == "SIGSTOP" || sig_name == "SIGTSTP")
 	next;
     handling_signal = sig;
 }
