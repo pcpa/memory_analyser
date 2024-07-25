@@ -256,8 +256,14 @@ function handle_invalid(pointer) {
 
 function handle_non_portable(pointer) {
     if (show_non_portable) {
-	printf("\nNon portable zero sized allocation %p\n", pointer);
-	print_ubacktrace();
+	backtrace = sprint_ubacktrace();
+	/* This is fragile. A thread not handling the signal is fine
+	 * allocating/releasing memory.  */
+	if (backtrace !~ "__restore_rt+") {
+	    printf("\nMemory allocation/deallocation during %s signal handler\n",
+		   signal_str(handling_signal));
+	    print_ubacktrace();
+	}
     }
 }
 
