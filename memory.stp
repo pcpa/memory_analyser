@@ -103,6 +103,7 @@ Bogus NoMap                                                  25270 (          0x
 global bytes_alloced_in_code_address;
 global pointer_alloc_addresses_in_code;
 global pointer_sizes;
+global mmap_sizes;
 global detailed_report;
 global string_truncate_length;
 global process_name = "";
@@ -335,25 +336,45 @@ function forget(address:long) {
 	delete allocs[address];
 }
 
+/* Could attempt to flag a glibc call is in progress, and if not, compute
+ * the map here. Since only glibc should be doing a direct sycall, for now
+ * keep it a bit simpler. */
+/*
+probe syscall.mmap2 {
+    if (pid() != target())
+	next;
+}
+
+probe syscall.mmap2.return {
+    if (pid() != target())
+	next;
+    pointer = @defined($return) ? $return : register("rax");
+}
+ */
+
+function common_mmap(pointer, size) {
+    code_address = uaddr();
+    handle_watch(code_address == watch_address,
+		 pointer && pointer == watch_pointer);
+    bytes_alloced_in_code_address[code_address] += size;
+    pointer_alloc_addresses_in_code[pointer] = code_address;
+    pointer_sizes[pointer] = mmap_sizes[pointer] = size;
+    if (verbose) {
+	allocs[code_address] = n_mmap;
+	++count_alloced_in_code_address[code_address];
+	if (verbose > 1)
+	    code_probe_names[code_address] = probefunc();
+    }
+}
+
 probe process("/lib64/libc.so.6").function("mmap").return {
     if (pid() != target())
 	next;
     pointer = @defined($return) ? $return : register("rax");
     if (pointer != -1) {
-	code_address = uaddr();
 	size = @defined(@entry($arg2)) ?
 			@entry($arg2) : @entry(register("rsi"));
-	handle_watch(code_address == watch_address,
-		     pointer && pointer == watch_pointer);
-	bytes_alloced_in_code_address[code_address] += size;
-	pointer_alloc_addresses_in_code[pointer] = code_address;
-	pointer_sizes[pointer] = size;
-	if (verbose) {
-	    allocs[code_address] = n_mmap;
-	    ++count_alloced_in_code_address[code_address];
-	    if (verbose > 1)
-		code_probe_names[code_address] = probefunc();
-	}
+	common_mmap(pointer, size);
     }
 }
 
@@ -364,7 +385,8 @@ probe process("/lib64/libc.so.6").function("mremap").return {
     old_pointer = @defined(@entry($arg1)) ?
 			   @entry($arg1) : @entry(register("rdi"));
     if (old_pointer) {
-	old_size = pointer_sizes[old_pointer];
+	old_size = mmap_sizes[old_pointer];
+	delete mmap_sizes[old_pointer];
 	delete pointer_sizes[old_pointer];
     }
     /* inline munmap */
@@ -391,7 +413,7 @@ probe process("/lib64/libc.so.6").function("mremap").return {
 	bytes_alloced_in_code_address[new_code_address] += new_size;
 	pointer_alloc_addresses_in_code[new_pointer] = new_code_address;
 	// assume new_size > 0
-	pointer_sizes[new_pointer] = new_size;
+	pointer_sizes[new_pointer] = mmap_sizes[new_pointer] = new_size;
 	if (verbose) {
 	    allocs[new_code_address] = n_mremap;
 	    ++count_alloced_in_code_address[new_code_address];
@@ -408,20 +430,52 @@ probe process("/lib64/libc.so.6").function("munmap") {
 	next;
     pointer = @defined($arg1) ? $arg1 : register("rdi");
     size = @defined($arg2) ? $arg2 : register("rsi");
-    /* These should only happen in glibc code, possibly due to memory
-     * mapped with a direct syscall during binary load */
-    /*
-    if (pointer_sizes[pointer] != size) {
-	printf("warning: munmap size difers: %ld - %ld\n",
-	       pointer_sizes[pointer], size);
-	print_ubacktrace();
+    new_pointer = 0;
+    new_size = 0;
+
+    /* These usually should only happen in glibc code, possibly due to memory
+     * mapped with a direct syscall during binary load, but can also happen
+     * with other binaries, that change map base or truncate the map. */
+
+    if (mmap_sizes[pointer] != size) {
+	/* Do not make computations on a possibly not aligned value. */
+	if ((size & (mem_page_size() - 1)) == 0) {
+	    /* Move the map forward */
+	    if (mmap_sizes[pointer]) {
+		new_pointer = pointer + size;
+		new_size = mmap_sizes[pointer] - size;
+	    }
+	    else {
+		/* Truncate the map */
+		foreach (map in mmap_sizes) {
+		    end = map + mmap_sizes[map];
+		    if (pointer >= map && pointer < end) {
+			if (pointer + size == end) {
+			    new_pointer = map;
+			    new_size = size;
+			}
+			else {
+			    /* FIXME Should compute the split 2 maps */
+			    printf("Not computing holes in memory maps\n");
+			    print_ubacktrace();
+			}
+			break;
+		    }
+		}
+	    }
+	}
+	else {
+	    /* FIXME Could adjust the value */
+	    printf("Not computing munmap on non pagesize aligned value\n");
+	    print_ubacktrace();
+	}
     }
-    */
-    if (pointer_sizes[pointer])
+    if (mmap_sizes[pointer]) {
+	delete mmap_sizes[pointer];
 	delete pointer_sizes[pointer];
+    }
     else
 	handle_invalid(pointer);
-    delete pointer_sizes[pointer];
     code_address = pointer_alloc_addresses_in_code[pointer];
     if (code_address) {
 	handle_watch(code_address == watch_address,
@@ -437,6 +491,8 @@ probe process("/lib64/libc.so.6").function("munmap") {
 	}
 	delete pointer_alloc_addresses_in_code[pointer];
     }
+    if (new_pointer)
+	common_mmap(new_pointer, new_size);
 }
 
 function common_malloc(pointer, size, kind) {
@@ -888,6 +944,7 @@ probe process("/lib64/libc.so.6").function("__restore_rt") {
 function reset() {
     delete pointer_alloc_addresses_in_code;
     delete pointer_sizes;
+    delete mmap_sizes;
     if (verbose) {
 	delete bytes_alloced_in_code_address;
 	delete count_alloced_in_code_address;
