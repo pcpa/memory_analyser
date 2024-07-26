@@ -176,6 +176,10 @@ global workaround_glibc = 1;
  * did not attach to a running process, false otherwise. */
 global record_double_free = -1;
 
+/* -Gshow_mmap_syscalls=1 to display information about mmap and munmap
+ * calls not done using the mmap and munmap glibc calls. */
+global show_mmap_syscalls = 0;
+
 /* Start pretending it did attach to running process. Changed in begin probe, */
 global attached = 1;
 
@@ -187,6 +191,9 @@ global reallocarray_is_realloc = 1;
 /* avoid double stats */
 global news;
 global deletes;
+global mmaps;
+global munmaps;
+global mmap_lengths;
 
 /* alloc type in verbose mode */
 global allocs;
@@ -302,7 +309,6 @@ process("/lib64/libc.so.6").function("brk"),
 process("/lib64/libc.so.6").function("sbrk"),
 process("/lib64/libc.so.6").function("mmap"),
 process("/lib64/libc.so.6").function("mremap"),
-process("/lib64/libc.so.6").function("munmap"),
 process("/lib64/libc.so.6").function("malloc"),
 process("/lib64/libc.so.6").function("valloc"),
 process("/lib64/libc.so.6").function("pvalloc"),
@@ -357,21 +363,32 @@ function forget(address:long) {
 	delete allocs[address];
 }
 
-/* Could attempt to flag a glibc call is in progress, and if not, compute
- * the map here. Since only glibc should be doing a direct sycall, for now
- * keep it a bit simpler. */
-/*
 probe syscall.mmap2 {
-    if (pid() != target())
+    if (!show_mmap_syscalls || pid() != target())
 	next;
+    if (!mmaps[tid()])
+	/* FIXME could not recover it in the return probe */
+	mmap_lengths[tid()] = length;
 }
 
 probe syscall.mmap2.return {
-    if (pid() != target())
+    if (!show_mmap_syscalls || pid() != target())
 	next;
-    pointer = @defined($return) ? $return : register("rax");
+    if (!mmaps[tid()]) {
+	pointer = @defined($return) ? $return : register("rax");
+	if (pointer != -1)
+	    printf("syscall   MMAP(%p, %12d)\n", pointer, mmap_lengths[tid()]);
+	delete mmap_lengths[tid()];
+    }
 }
- */
+
+probe syscall.munmap {
+    if (!show_mmap_syscalls || pid() != target())
+	next;
+    if (!munmaps[tid()]) {
+	printf("syscall MUNMAP(%p, %12ld)\n", start, length);
+    }
+}
 
 function common_mmap(pointer, size) {
     code_address = uaddr();
@@ -388,6 +405,14 @@ function common_mmap(pointer, size) {
     }
 }
 
+probe process("/lib64/libc.so.6").function("mmap") {
+    if (pid() != target())
+	next;
+    check_signal();
+    if (show_mmap_syscalls)
+	mmaps[tid()] = 1;
+}
+
 probe process("/lib64/libc.so.6").function("mmap").return {
     if (pid() != target())
 	next;
@@ -397,6 +422,8 @@ probe process("/lib64/libc.so.6").function("mmap").return {
 			@entry($arg2) : @entry(register("rsi"));
 	common_mmap(pointer, size);
     }
+    if (show_mmap_syscalls)
+	delete mmaps[tid()];
 }
 
 probe process("/lib64/libc.so.6").function("mremap").return {
@@ -453,6 +480,9 @@ probe process("/lib64/libc.so.6").function("mremap").return {
 probe process("/lib64/libc.so.6").function("munmap") {
     if (pid() != target())
 	next;
+    check_signal();
+    if (show_mmap_syscalls)
+	munmaps[tid()] = 1;
     pointer = @defined($arg1) ? $arg1 : register("rdi");
     size = @defined($arg2) ? $arg2 : register("rsi");
     new_pointer = 0;
@@ -520,6 +550,13 @@ probe process("/lib64/libc.so.6").function("munmap") {
     }
     if (new_pointer)
 	common_mmap(new_pointer, new_size);
+}
+
+probe process("/lib64/libc.so.6").function("munmap").return {
+    if (pid() != target())
+	next;
+    if (show_mmap_syscalls)
+	delete munmaps[tid()];
 }
 
 function common_malloc(pointer, size, kind) {
