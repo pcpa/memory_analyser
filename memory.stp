@@ -273,23 +273,20 @@ function handle_invalid(pointer) {
 }
 
 function handle_non_portable(pointer) {
-    if (show_non_portable) {
-	backtrace = sprint_ubacktrace();
-	/* This is fragile. A thread not handling the signal is fine
-	 * allocating/releasing memory.  */
-	if (backtrace !~ "__restore_rt+") {
-	    printf("\nMemory allocation/deallocation during %s signal handler\n",
-		   signal_str(handling_signal));
-	    print_ubacktrace();
-	}
-    }
+    if (show_non_portable)
+	print_ubacktrace();
 }
 
 function check_signal() {
     if (handling_signal) {
-	printf("\nMemory allocation during %s signal handler\n",
-	       signal_str(handling_signal));
-	print_ubacktrace();
+	backtrace = sprint_ubacktrace();
+	/* This is fragile. A thread not handling the signal is fine
+	 * allocating/releasing memory.  */
+	if (backtrace =~ "__restore_rt+") {
+	    printf("\nMemory allocation/deallocation during %s signal handler\n",
+		   signal_str(handling_signal));
+	    print_ubacktrace();
+	}
     }
 }
 
