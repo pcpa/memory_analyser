@@ -242,8 +242,8 @@ function handle_invalid(pointer) {
 	     * allocated with a short-circuit call to _int_malloc.
 	     */
 	    backtrace = sprint_ubacktrace();
-	    if (backtrace !~ "__malloc_arena_thread_freeres+" ||
-		(backtrace !~ "__munmap+" && backtrace !~ "alloc_new_heap+"))
+	    if (backtrace =~ "__malloc_arena_thread_freeres+" ||
+		(backtrace =~ "__munmap+" && backtrace =~ "alloc_new_heap+"))
 		return;
 	}
 	printf("\nInvalid/unknown pointer %p\n", pointer);
