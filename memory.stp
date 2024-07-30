@@ -359,6 +359,7 @@ probe process("/lib64/libc.so.6").function("sbrk").return {
 
 function forget(address:long) {
     /* Avoid remembering non useful information for too long */
+    delete bytes_alloced_in_code_address[address];
     if (verbose)
 	delete allocs[address];
 }
@@ -443,10 +444,8 @@ probe process("/lib64/libc.so.6").function("mremap").return {
 	handle_watch(old_code_address == watch_address,
 		     old_pointer && old_pointer == watch_pointer);
 	bytes_alloced_in_code_address[old_code_address] -= old_size;
-	if (bytes_alloced_in_code_address[old_code_address] == 0) {
-	    delete bytes_alloced_in_code_address[old_code_address];
+	if (bytes_alloced_in_code_address[old_code_address] == 0)
 	    forget(old_code_address);
-	}
 	if (verbose)
 	    ++count_freed_in_code_address[old_code_address];
     }
@@ -541,10 +540,8 @@ probe process("/lib64/libc.so.6").function("munmap") {
 	    if (verbose)
 		++count_freed_in_code_address[code_address];
 	    bytes_alloced_in_code_address[code_address] -= size;
-	    if (bytes_alloced_in_code_address[code_address] == 0) {
-		delete bytes_alloced_in_code_address[code_address];
+	    if (bytes_alloced_in_code_address[code_address] == 0)
 		forget(code_address);
-	    }
 	}
 	delete pointer_alloc_addresses_in_code[pointer];
     }
@@ -638,10 +635,8 @@ function common_realloc(new_pointer, old_pointer, new_size, kind) {
 	if (verbose > 1 &&
 	    old_pointer >= break_start && old_pointer < break_end)
 	    break_alloc -= old_size;
-	if (bytes_alloced_in_code_address[old_code_address] == 0) {
-	    delete bytes_alloced_in_code_address[old_code_address];
+	if (bytes_alloced_in_code_address[old_code_address] == 0)
 	    forget(old_code_address);
-	}
 	if (verbose)
 	    ++count_freed_in_code_address[old_code_address];
     }
@@ -790,10 +785,8 @@ function common_free(pointer) {
 		    break_alloc -= size;
 	    }
 	    bytes_alloced_in_code_address[code_address] -= size;
-	    if (bytes_alloced_in_code_address[code_address] == 0) {
-		delete bytes_alloced_in_code_address[code_address];
+	    if (bytes_alloced_in_code_address[code_address] == 0)
 		forget(code_address);
-	    }
 	}
 	delete pointer_alloc_addresses_in_code[pointer];
 	if (record_double_free)
