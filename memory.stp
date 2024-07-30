@@ -598,26 +598,8 @@ probe process("/lib64/libc.so.6").function("calloc").return {
     number  = @defined(@entry($arg1)) ? @entry($arg1) : @entry(register("rdi"));
     count   = @defined(@entry($arg2)) ? @entry($arg2) : @entry(register("rsi"));
     size = number * count;
-    if (pointer) {
-	if (record_double_free)
-	    delete pointer_release_address_in_code[pointer];
-	if (size == 0)
-	    handle_non_portable(pointer);
-	code_address = uaddr();
-	handle_watch(code_address == watch_address, pointer == watch_pointer);
-	bytes_alloced_in_code_address[code_address] += size;
-	pointer_alloc_addresses_in_code[pointer] = code_address;
-	pointer_sizes[pointer] = size;
-	if (verbose) {
-	    allocs[code_address] = n_calloc;
-	    ++count_alloced_in_code_address[code_address];
-	    if (verbose > 1) {
-		code_probe_names[code_address] = probefunc();
-		if (pointer >= break_start && pointer < break_end)
-		    break_alloc += size;
-	    }
-	}
-    }
+    if (pointer)
+	common_malloc(pointer, size, n_calloc);
 }
 
 function common_realloc(new_pointer, old_pointer, new_size, kind) {
@@ -716,24 +698,8 @@ probe process("/lib64/libc.so.6").function("posix_memalign").return {
 				      @entry($arg1) : register("rdi");
 	size		   = @defined(@entry($arg3)) ?
 				      @entry($arg3) : register("rdx");
-	code_address = uaddr();
 	pointer = user_int64(pointer_to_pointer);
-	if (record_double_free)
-	    delete pointer_release_address_in_code[pointer];
-	handle_watch(code_address == watch_address,
-		     pointer && pointer == watch_pointer);
-	bytes_alloced_in_code_address[code_address] += size;
-	pointer_alloc_addresses_in_code[pointer] = code_address;
-	pointer_sizes[pointer] = size;
-	if (verbose) {
-	    allocs[code_address] = n_posix_memalign;
-	    ++count_alloced_in_code_address[code_address];
-	    if (verbose > 1) {
-		code_probe_names[code_address] = probefunc();
-		if (pointer >= break_start && pointer < break_end)
-		    break_alloc += size;
-	    }
-	}
+	common_malloc(pointer, size, n_posix_memalign);
     }
 }
 
@@ -746,24 +712,8 @@ process("/lib64/libc.so.6").function("memalign").return	/* deprecated */
     pointer = @defined($return) ? $return : register("rax");
     size    = @defined(@entry($arg2)) ?
 		       @entry($arg2) : @entry(register("rsi"));
-    if (size && pointer) {
-	if (record_double_free)
-	    delete pointer_release_address_in_code[pointer];
-	code_address = uaddr();
-	handle_watch(code_address == watch_address, pointer == watch_pointer);
-	bytes_alloced_in_code_address[code_address] += size;
-	pointer_alloc_addresses_in_code[pointer] = code_address;
-	pointer_sizes[pointer] = size;
-	if (verbose) {
-	    allocs[code_address] = n_aligned_alloc;
-	    ++count_alloced_in_code_address[code_address];
-	    if (verbose > 1) {
-		code_probe_names[code_address] = probefunc();
-		if (pointer >= break_start && pointer < break_end)
-		    break_alloc += size;
-	    }
-	}
-    }
+    if (pointer)
+	common_malloc(pointer, size, n_aligned_alloc);
 }
 
 function common_free(pointer) {
