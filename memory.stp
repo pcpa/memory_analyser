@@ -108,6 +108,7 @@ global mmap_sizes;
 global detailed_report;
 global string_truncate_length;
 global process_name = "";
+global process_path;
 global process_arguments, exec_process_arguments;
 
 /* Bogus malloc main_arena area information */
@@ -180,6 +181,9 @@ global record_double_free = -1;
  * calls not done using the mmap and munmap glibc calls. */
 global show_mmap_syscalls = 0;
 
+global start_gdbserver;
+global gdbserver_port = 1234;
+
 /* Start pretending it did attach to running process. Changed in begin probe, */
 global attached = 1;
 
@@ -220,11 +224,17 @@ global n_aligned_alloc = 8;
 global n_new = 9;
 
 probe begin {
-    pid = target();
-    %( $# < 1 %? attached = 0 %: pid = $1 %);
-    task = pid2task(pid);
-    if (task == 0)
-	error(sprintf("Process-id %d is invalid, please provide valid PID as $1 or -x PID", pid));
+    tokenize(cmdline_str(), " ");
+    token = tokenize("", " ");
+    attached = token != "-c";
+    if (attached && token != "-t")
+	error("Use -x PID to attach to a process\n");
+    if (attached && start_gdbserver) {
+	token = tokenize("", " ");
+	pid = strtol(token, 10);
+	process_path = pid2execname(pid);
+	run_gdbserver(pid);
+    }
     if (!attached && trap_on_invalid)
 	printf("-Gtrap_on_invalid might generate false positives when attaching to a pid.");
     if (show_invalid == -1)
@@ -295,6 +305,15 @@ function check_signal() {
 	    print_ubacktrace();
 	}
     }
+}
+
+function run_gdbserver(pid) {
+    system(sprintf("gdbserver --attach :%d %d",
+		   gdbserver_port, pid));
+    printf("To attach gdb, run in the command line\n$ gdb %s\n",
+	   process_path);
+    printf("In gdb prompt type:\n(gdb) target remote :%d\n\n",
+	   gdbserver_port);
 }
 
 function ucaller_address:long() {
@@ -988,6 +1007,7 @@ function reset() {
 probe kprocess.exec {
     if (pid() != target())
 	next;
+    process_path = filename;
     exec_process_arguments = argstr;
 }
 
@@ -998,6 +1018,10 @@ probe kprocess.exec_complete {
 	if (process_name != "") {
 	    report();
 	    reset();
+	}
+	else if (!attached) {
+	    if (start_gdbserver)
+		run_gdbserver(pid());
 	}
 	process_name = execname();
 	process_arguments = exec_process_arguments;
