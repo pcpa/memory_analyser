@@ -108,7 +108,7 @@ global mmap_sizes;
 global detailed_report;
 global string_truncate_length;
 global process_name = "";
-global process_path;
+global process_path = "";
 global process_arguments, exec_process_arguments;
 
 /* Bogus malloc main_arena area information */
@@ -181,8 +181,11 @@ global record_double_free = -1;
  * calls not done using the mmap and munmap glibc calls. */
 global show_mmap_syscalls = 0;
 
-global start_gdbserver;
+global start_gdbserver = 0;
 global gdbserver_port = 1234;
+/* FIXME For now need to edit it to have slashes, as the -G option needs
+ * to match the regex "^[a-z_][a-z0-9_]*=[a-z0-9_.-]+$" */
+global binary_path_for_gdbserver = "";
 
 /* Start pretending it did attach to running process. Changed in begin probe, */
 global attached = 1;
@@ -1019,10 +1022,18 @@ probe kprocess.exec_complete {
 	    report();
 	    reset();
 	}
-	else if (!attached) {
-	    if (start_gdbserver)
-		run_gdbserver(pid());
+	if (start_gdbserver) {
+	    printf("attached = %d\nbinary_path_for_gdbserver = %s\nprocess_path = %s\n",
+		   attached, binary_path_for_gdbserver, process_path);
 	}
+	if (start_gdbserver && !attached &&
+	    ((binary_path_for_gdbserver != "" &&
+	      (binary_path_for_gdbserver == process_path ||
+	       /* process_path is a string starting/ending with quotes */
+	       sprintf("\"%s\"", binary_path_for_gdbserver) == process_path)) ||
+	     (binary_path_for_gdbserver == "" &&
+	      process_path != "")))
+	    run_gdbserver(pid());
 	process_name = execname();
 	process_arguments = exec_process_arguments;
     }
