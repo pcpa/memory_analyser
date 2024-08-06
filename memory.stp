@@ -105,6 +105,10 @@ global pointer_alloc_addresses_in_code;
 global pointer_release_address_in_code;
 global pointer_sizes;
 global mmap_sizes;
+global mmap_filenames;
+global mmap_prots;
+global mmap_starts;
+global mmap_offsets;
 global detailed_report;
 global string_truncate_length;
 global process_name = "";
@@ -264,6 +268,53 @@ function handle_watch(handle_address, handle_pointer) {
 	  %);
 }
 
+%( guru_mode != 0 %?
+  function task_file_handle_d_path:string (task:long, fd:long)
+  %{ /* pure */
+      struct task_struct *p = (struct task_struct *)((long)STAP_ARG_task);
+      struct files_struct *files;
+      char *page = NULL;
+      struct file *filp;
+      struct dentry *dentry;
+      struct vfsmount *vfsmnt;
+      char *path = NULL;
+
+      rcu_read_lock();
+      if ((files = kread(&p->files)) &&
+	  // We need GFP_ATOMIC since we're inside a lock so we
+	  // can't sleep.
+	  (page = (char *)__get_free_page(GFP_ATOMIC)) &&
+	  (
+#ifdef STAPCONF_FILES_LOOKUP_FD_RAW
+	   filp = files_lookup_fd_raw(files, STAP_ARG_fd)
+#else
+	   filp = fcheck_files(files, STAP_ARG_fd)
+#endif
+	   )) {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,26)
+	  /* git commit 9d1bc601 */
+	  path = d_path(&filp->f_path, page, PAGE_SIZE);
+#else
+	  dentry = kread(&filp->f_dentry);
+	  vfsmnt = kread(&filp->f_vfsmnt);
+
+	  if (dentry && vfsmnt) {
+	      path = d_path(dentry, vfsmnt, page, PAGE_SIZE);
+	  }
+#endif
+	  if (path && !IS_ERR(path)) {
+	      snprintf(STAP_RETVALUE, MAXSTRINGLEN, "%s", path);
+	  }
+      }
+      CATCH_DEREF_FAULT();
+
+      if (page) free_page((unsigned long)page);
+
+      rcu_read_unlock();
+      %}
+  %: %)
+
+
 function handle_invalid(pointer) {
     if (show_invalid) {
 	if (workaround_glibc) {
@@ -389,9 +440,18 @@ function forget(address:long) {
 probe syscall.mmap2 {
     if (!show_mmap_syscalls || pid() != target())
 	next;
-    if (!mmaps[tid()])
+    if (!mmaps[tid()]) {
 	/* FIXME could not recover it in the return probe */
 	mmap_lengths[tid()] = length;
+	mmap_starts[tid()] = start;
+	mmap_offsets[tid()] = pgoffset;
+	mmap_prots[tid()] = prot;
+	%(guru_mode != 0 %?
+	  if (fd >= 0)
+	      mmap_filenames[tid()] =
+		task_file_handle_d_path(pid2task(tid()), fd)
+	  %: %);
+    }
 }
 
 probe syscall.mmap2.return {
@@ -399,8 +459,26 @@ probe syscall.mmap2.return {
 	next;
     if (!mmaps[tid()]) {
 	pointer = @defined($return) ? $return : register("rax");
-	if (pointer != -1)
-	    printf("syscall   MMAP(%p, %12d)\n", pointer, mmap_lengths[tid()]);
+	if (pointer != -1) {
+	    printf("syscall   MMAP(%p, %12d", pointer, mmap_lengths[tid()]);
+	    %(guru_mode != 0 %?
+	      if (mmap_filenames[tid()] != "") {
+		  printf(", %s", mmap_filenames[tid()]);
+		  delete mmap_filenames[tid()]
+	      } %: %);
+	    if (mmap_starts[tid()])
+		printf(", %p", mmap_starts[tid()]);
+	    delete mmap_starts[tid()];
+	    printf(", %s%s%s",
+		   mmap_prots[tid()] & 1 ? "r" : "-",
+		   mmap_prots[tid()] & 2 ? "w" : "-",
+		   mmap_prots[tid()] & 4 ? "x" : "-");
+	    delete mmap_prots[tid()];
+	    if (mmap_offsets[tid()])
+		printf(", %ld", mmap_offsets[tid()]);
+	    delete mmap_offsets[tid()];
+	    printf(")\n");
+	}
 	delete mmap_lengths[tid()];
     }
 }
