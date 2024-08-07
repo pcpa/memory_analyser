@@ -105,7 +105,7 @@ global pointer_alloc_addresses_in_code;
 global pointer_release_address_in_code;
 global pointer_sizes;
 global mmap_sizes;
-global mmap_filenames;
+global %(guru_mode != 0 %? mmap_filenames %: mmap_fds %);
 global mmap_prots;
 global mmap_starts;
 global mmap_offsets;
@@ -459,7 +459,7 @@ probe syscall.mmap2 {
 	  if (fd >= 0)
 	      mmap_filenames[tid()] =
 		task_file_handle_d_path(pid2task(tid()), fd)
-	  %: %);
+	      %: mmap_fds[tid()] = fd %);
     }
 }
 
@@ -477,7 +477,10 @@ probe syscall.mmap2.return {
 	      if (mmap_filenames[tid()] != "") {
 		  printf(", %s", mmap_filenames[tid()]);
 		  delete mmap_filenames[tid()]
-	      } %: %);
+	      } %:
+	      if (mmap_fds[tid()] >= 0)
+		  printf(", %ld", mmap_fds[tid()]);
+	      delete mmap_fds[tid()] %);
 	    if (mmap_starts[tid()])
 		printf(", %p", mmap_starts[tid()]);
 	    delete mmap_starts[tid()];
