@@ -388,7 +388,6 @@ function ucaller_address:long() {
 probe
 process("/lib64/libc.so.6").function("brk"),
 process("/lib64/libc.so.6").function("sbrk"),
-process("/lib64/libc.so.6").function("mmap"),
 process("/lib64/libc.so.6").function("mremap"),
 process("/lib64/libc.so.6").function("malloc"),
 process("/lib64/libc.so.6").function("valloc"),
@@ -496,6 +495,7 @@ probe syscall.mmap2.return {
 	}
 	delete mmap_lengths[tid()];
     }
+    delete mmaps[tid()];
 }
 
 probe syscall.munmap {
@@ -506,6 +506,12 @@ probe syscall.munmap {
 	printf("%ssyscall MUNMAP(%p, %12ld)\n",
 	       munmaps[tid()] ? "*" : " ",
 	       start, length);
+}
+
+probe syscall.munmap.return {
+    if (pid() != target())
+	next;
+    delete munmaps[tid()];
 }
 
 function common_mmap(pointer, size) {
@@ -527,8 +533,7 @@ probe process("/lib64/libc.so.6").function("mmap") {
     if (pid() != target())
 	next;
     check_signal();
-    if (show_mmap_syscalls || show_nested_mmap_syscalls)
-	mmaps[tid()] = 1;
+    mmaps[tid()] = 1;
 }
 
 probe process("/lib64/libc.so.6").function("mmap").return {
@@ -540,8 +545,6 @@ probe process("/lib64/libc.so.6").function("mmap").return {
 			@entry($arg2) : @entry(register("rsi"));
 	common_mmap(pointer, size);
     }
-    if (show_mmap_syscalls || show_nested_mmap_syscalls)
-	delete mmaps[tid()];
 }
 
 probe process("/lib64/libc.so.6").function("mremap").return {
@@ -597,8 +600,7 @@ probe process("/lib64/libc.so.6").function("munmap") {
     if (pid() != target())
 	next;
     check_signal();
-    if (show_mmap_syscalls || show_nested_mmap_syscalls)
-	munmaps[tid()] = 1;
+    munmaps[tid()] = 1;
     pointer = @defined($arg1) ? $arg1 : register("rdi");
     size = @defined($arg2) ? $arg2 : register("rsi");
     new_pointer = 0;
@@ -664,13 +666,6 @@ probe process("/lib64/libc.so.6").function("munmap") {
     }
     if (new_pointer)
 	common_mmap(new_pointer, new_size);
-}
-
-probe process("/lib64/libc.so.6").function("munmap").return {
-    if (pid() != target())
-	next;
-    if (show_mmap_syscalls || show_nested_mmap_syscalls)
-	delete munmaps[tid()];
 }
 
 function common_malloc(pointer, size, kind) {
