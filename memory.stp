@@ -218,6 +218,36 @@ global mmaps;
 global munmaps;
 global mmap_lengths;
 
+%( 1 == 1 /* tcmalloc */ %?
+global tc_news;
+global tc_deletes;
+/* FIXME unless using --suppress-handler-errors it will fail with
+
+ERROR: reached end of stack before unwinding to level 1
+
+and if commenting the operator new handlers it also shows the pattern:
+
+Invalid/unknown pointer 0x55d2e871e000
+ 0x7f3751216954 : _sub_I_65535_0.0+0x8e4/0x9b0 [/usr/lib64/libtcmalloc.so.4.5.15]
+ 0x7f37514e6437 [/usr/lib64/ld-linux-x86-64.so.2+0x5437/0x37000]
+Pointer marked as released at code address 0x7f37512162c5 (_sub_I_65535_0.0+0x255/0x9b0 [/usr/lib64/libtcmalloc.so.4.5.15])
+
+Invalid/unknown pointer 0x55d2e8722080
+ 0x7f37512363cb : _ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEE9_M_mutateEmmPKcm.constprop.0+0x10b/0x1d0 [/usr/lib64/libtcmalloc.so.4.5.15]
+ 0x7f375122d968 : _ZN15MallocExtension10InitializeEv+0xd8/0x110 [/usr/lib64/libtcmalloc.so.4.5.15]
+ 0x7f3751216959 : _sub_I_65535_0.0+0x8e9/0x9b0 [/usr/lib64/libtcmalloc.so.4.5.15]
+ 0x7f37514e6437 [/usr/lib64/ld-linux-x86-64.so.2+0x5437/0x37000]
+
+Invalid/unknown pointer 0x55d2e8724000
+ 0x7f375122d985 : _ZN15MallocExtension10InitializeEv+0xf5/0x110 [/usr/lib64/libtcmalloc.so.4.5.15]
+ 0x7f3751216959 : _sub_I_65535_0.0+0x8e9/0x9b0 [/usr/lib64/libtcmalloc.so.4.5.15]
+ 0x7f37514e6437 [/usr/lib64/ld-linux-x86-64.so.2+0x5437/0x37000]
+
+For now leave in a state that should work for common C code.
+*/
+global skip_tcmalloc_cpp = 1;
+  %)
+
 /* alloc type in verbose mode */
 global allocs;
 
@@ -248,6 +278,17 @@ global n_new = 9;
  global n_je_posix_memalign = 13;
  global n_je_aligned_alloc = 14;
  %)
+%( 1 == 1 /* tcmalloc */ %?
+  global n_tc_mmap = 15;
+  global n_tc_mremap = 16;
+  global n_tc_malloc = 17;
+  global n_tc_calloc = 18;
+  global n_tc_realloc = 19;
+  global n_tc_reallocarray = 20;
+  global n_tc_posix_memalign = 21;
+  global n_tc_aligned_alloc = 22;
+  global n_tc_new = 23;
+  %)
 
 probe begin {
     tokenize(cmdline_str(), " ");
@@ -525,7 +566,7 @@ probe syscall.munmap.return {
     delete munmaps[tid()];
 }
 
-function common_mmap(pointer, size) {
+function common_mmap(pointer, size, kind) {
     code_address = uaddr();
     handle_watch(code_address == watch_address,
 		 pointer && pointer == watch_pointer);
@@ -533,7 +574,7 @@ function common_mmap(pointer, size) {
     pointer_alloc_addresses_in_code[pointer] = code_address;
     pointer_sizes[pointer] = mmap_sizes[pointer] = size;
     if (verbose) {
-	allocs[code_address] = n_mmap;
+	allocs[code_address] = kind;
 	++count_alloced_in_code_address[code_address];
 	if (verbose > 1)
 	    code_probe_names[code_address] = probefunc();
@@ -554,18 +595,14 @@ probe process("/lib64/libc.so.6").function("mmap").return {
     if (pointer != -1) {
 	size = @defined(@entry($arg2)) ?
 			@entry($arg2) : @entry(register("rsi"));
-	common_mmap(pointer, size);
+	common_mmap(pointer, size, n_mmap);
     }
 }
 
-probe process("/lib64/libc.so.6").function("mremap").return {
-    if (pid() != target())
-	next;
-    old_size = 0;
-    old_pointer = @defined(@entry($arg1)) ?
-			   @entry($arg1) : @entry(register("rdi"));
+function common_mremap(old_pointer, new_pointer, old_size, new_size, kind) {
+    recorded_old_size = 0;
     if (old_pointer) {
-	old_size = mmap_sizes[old_pointer];
+	recorded_old_size = mmap_sizes[old_pointer];
 	delete mmap_sizes[old_pointer];
 	delete pointer_sizes[old_pointer];
     }
@@ -574,6 +611,9 @@ probe process("/lib64/libc.so.6").function("mremap").return {
     if (old_code_address) {
 	handle_watch(old_code_address == watch_address,
 		     old_pointer && old_pointer == watch_pointer);
+	if (recorded_old_size != old_size)
+	    printf("Change in old size argument for mremap %ld - > %ld\n",
+		   recorded_old_size, old_size);
 	bytes_alloced_in_code_address[old_code_address] -= old_size;
 	if (bytes_alloced_in_code_address[old_code_address] == 0)
 	    forget(old_code_address);
@@ -581,7 +621,6 @@ probe process("/lib64/libc.so.6").function("mremap").return {
 	    ++count_freed_in_code_address[old_code_address];
     }
     /* inline mmap */
-    new_pointer = @defined($return) ? $return : register("rax");
     if (new_pointer != -1) {
 	/* FIXME Is there some scenario where it can end up with no new map
 	 * and invalidated old map? */
@@ -590,14 +629,12 @@ probe process("/lib64/libc.so.6").function("mremap").return {
 	new_code_address = uaddr();
 	handle_watch(new_code_address == watch_address,
 		     new_pointer && new_pointer == watch_pointer);
-	new_size = @defined(@entry($arg3)) ?
-			    @entry($arg3) : @entry(register("rdx"));
 	bytes_alloced_in_code_address[new_code_address] += new_size;
 	pointer_alloc_addresses_in_code[new_pointer] = new_code_address;
 	// assume new_size > 0
 	pointer_sizes[new_pointer] = mmap_sizes[new_pointer] = new_size;
 	if (verbose) {
-	    allocs[new_code_address] = n_mremap;
+	    allocs[new_code_address] = kind;
 	    ++count_alloced_in_code_address[new_code_address];
 	    if (verbose > 1)
 		code_probe_names[new_code_address] = probefunc();
@@ -607,13 +644,22 @@ probe process("/lib64/libc.so.6").function("mremap").return {
 	handle_invalid(old_pointer);
 }
 
-probe process("/lib64/libc.so.6").function("munmap") {
+probe process("/lib64/libc.so.6").function("mremap").return {
     if (pid() != target())
 	next;
+    old_pointer = @defined(@entry($arg1)) ?
+			   @entry($arg1) : @entry(register("rdi"));
+    new_pointer = @defined($return) ? $return : register("rax");
+    new_size	= @defined(@entry($arg3)) ?
+			   @entry($arg3) : @entry(register("rdx"));
+    old_size	= @defined(@entry($arg2)) ?
+			   @entry($arg2) : @entry(register("rsi"));
+    common_mremap(new_pointer, old_pointer, new_size, old_size, n_mremap);
+}
+
+function common_munmap(pointer, size, kind) {
     check_signal();
     munmaps[tid()] = 1;
-    pointer = @defined($arg1) ? $arg1 : register("rdi");
-    size = @defined($arg2) ? $arg2 : register("rsi");
     new_pointer = 0;
     new_size = 0;
 
@@ -676,7 +722,15 @@ probe process("/lib64/libc.so.6").function("munmap") {
 	delete pointer_alloc_addresses_in_code[pointer];
     }
     if (new_pointer)
-	common_mmap(new_pointer, new_size);
+	common_mmap(new_pointer, new_size, kind);
+}
+
+probe process("/lib64/libc.so.6").function("munmap") {
+    if (pid() != target())
+	next;
+    pointer = @defined($arg1) ? $arg1 : register("rdi");
+    size = @defined($arg2) ? $arg2 : register("rsi");
+    common_munmap(pointer, size, n_mmap);
 }
 
 function common_malloc(pointer, size, kind) {
@@ -1070,6 +1124,258 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
   }
   %)
 
+%( 1 == 1 %?
+  probe
+  process("/lib64/libtcmalloc*.so.4").function("sbrk") ?,
+  process("/lib64/libtcmalloc*.so.4").function("mmap") ?,
+  process("/lib64/libtcmalloc*.so.4").function("mremap") ?,
+  process("/lib64/libtcmalloc*.so.4").function("munmap") ?,
+  process("/lib64/libtcmalloc*.so.4").function("malloc") ?,
+  process("/lib64/libtcmalloc*.so.4").function("calloc") ?,
+  process("/lib64/libtcmalloc*.so.4").function("realloc") ?,
+  process("/lib64/libtcmalloc*.so.4").function("posix_memalign") ?,
+  process("/lib64/libtcmalloc*.so.4").function("aligned_alloc") ?
+  {
+      if (pid() != target())
+	  next;
+      check_signal();
+  }
+
+  probe process("/lib64/libtcmalloc*.so.4").function("sbrk").return ? {
+      if (pid() != target())
+	  next;
+      pointer = @defined($return) ? $return : register("rax");
+      if (pointer != -1) {
+	  handle_watch(uaddr() == watch_address,
+		       pointer && pointer == watch_pointer);
+	  /*
+	    increment = @defined(@entry($arg1)) ?
+				 @entry($arg1) : @entry(register("rdi"));
+	 */
+	  if (break_start == 0 || pointer < break_start)
+	      break_start = pointer;
+	  if (break_end == 0 || pointer > break_end)
+	      break_end = pointer;
+      }
+  }
+
+  /* Not called if preloading */
+  probe process("/lib64/libtcmalloc*.so.4").function("mmap").return {
+      if (pid() != target())
+	  next;
+      pointer = @defined($return) ? $return : register("rax");
+      if (pointer != -1) {
+	  size = @defined(@entry($arg2)) ?
+			  @entry($arg2) : @entry(register("rsi"));
+	  common_mmap(pointer, size, n_tc_mmap);
+      }
+  }
+
+  /* Not called if preloading? */
+  probe process("/lib64/libtcmalloc*.so.4").function("mremap").return {
+      if (pid() != target())
+	  next;
+      old_pointer = @defined(@entry($arg1)) ?
+			   @entry($arg1) : @entry(register("rdi"));
+      new_pointer = @defined($return) ? $return : register("rax");
+      new_size	  = @defined(@entry($arg3)) ?
+			     @entry($arg3) : @entry(register("rdx"));
+      old_size	  = @defined(@entry($arg2)) ?
+			     @entry($arg2) : @entry(register("rsi"));
+      common_mremap(new_pointer, old_pointer, new_size, old_size, n_tc_mremap);
+  }
+
+  /* Not called if preloading? */
+  probe process("/lib64/libtcmalloc*.so.4").function("munmap") {
+      if (pid() != target())
+	  next;
+      pointer = @defined($arg1) ? $arg1 : register("rdi");
+      size = @defined($arg2) ? $arg2 : register("rsi");
+      common_munmap(pointer, size, n_tc_mmap);
+  }
+
+  probe
+  process("/lib64/libtcmalloc*.so.4").function("malloc").return ?,
+  process("/lib64/libtcmalloc*.so.4").function("valloc").return ?, /* deprecated */
+  process("/lib64/libtcmalloc*.so.4").function("pvalloc").return ? /* deprecated */
+  {
+      if (pid() != target())
+	  next;
+      if (!tc_news[tid()]) {
+	  pointer = @defined($return) ? $return : register("rax");
+	  size = @defined(@entry($arg1)) ? @entry($arg1) : @entry(register("rdi"));
+	  common_malloc(pointer, size, n_tc_malloc);
+      }
+  }
+
+  probe process("/lib64/libtcmalloc*.so.4").function("calloc").return ? {
+      if (pid() != target())
+	  next;
+      pointer = @defined($return) ? $return : register("rax");
+      number  = @defined(@entry($arg1)) ?
+			 @entry($arg1) : @entry(register("rdi"));
+      count   = @defined(@entry($arg2)) ?
+			 @entry($arg2) : @entry(register("rsi"));
+      size = number * count;
+      if (pointer)
+	  common_malloc(pointer, size, n_tc_calloc);
+  }
+
+  probe process("/lib64/libtcmalloc*.so.4").function("realloc").return ? {
+      if (pid() != target())
+	  next;
+      new_pointer	= @defined($return) ? $return : register("rax");
+      old_pointer	= @defined(@entry($arg1)) ?
+				   @entry($arg1) : @entry(register("rdi"));
+      new_size		= @defined(@entry($arg2)) ?
+				   @entry($arg2) : @entry(register("rsi"));
+      common_realloc(new_pointer, old_pointer, new_size, n_tc_realloc);
+  }
+
+  probe process("/lib64/libtcmalloc*.so.4").function("posix_memalign").return ? {
+      if (pid() != target())
+	  next;
+      result = @defined($return) ? $return : register("rax");
+      if (result == 0) {
+	  pointer_to_pointer = @defined(@entry($arg1)) ?
+					@entry($arg1) : register("rdi");
+	  size		   = @defined(@entry($arg3)) ?
+	  @entry($arg3) : register("rdx");
+	  pointer = user_int64(pointer_to_pointer);
+	  common_malloc(pointer, size, n_tc_posix_memalign);
+      }
+  }
+
+  probe
+  process("/lib64/libtcmalloc*.so.4").function("aligned_alloc").return ?,
+  process("/lib64/libtcmalloc*.so.4").function("memalign").return ? {
+      if (pid() != target())
+	  next;
+      pointer = @defined($return) ? $return : register("rax");
+      size    = @defined(@entry($arg2)) ?
+      @entry($arg2) : @entry(register("rsi"));
+      if (pointer)
+	  common_malloc(pointer, size, n_tc_aligned_alloc);
+  }
+
+  probe process("/lib64/libtcmalloc*.so.4").function("free") ? {
+      if (pid() != target())
+	  next;
+      if (!tc_deletes[tid()]) {
+	  check_signal();
+	  pointer = @defined($arg1) ? $arg1 : register("rdi");
+	  common_free(pointer);
+      }
+  }
+
+
+  probe
+  /*
+  // operator new(unsigned long)
+  process("/lib64/libtcmalloc*.so.4").function("_Znwm") ?,
+ */
+  // operator new[](unsigned long)
+  process("/lib64/libtcmalloc*.so.4").function("_Znam") ?,
+  /*
+  // operator new(unsigned long, std::nothrow_t const&)
+  process("/lib64/libtcmalloc*.so.4").function("_ZnwmRKSt9nothrow_t") ?,
+  */
+  // operator new[](unsigned long, std::nothrow_t const&)
+  process("/lib64/libtcmalloc*.so.4").function("_ZnamRKSt9nothrow_t") ?,
+  /*
+  // operator new(unsigned long, std::align_val_t)
+  process("/lib64/libtcmalloc*.so.4").function("_ZnwmSt11align_val_t") ?,
+  */
+  // operator new[](unsigned long, std::align_val_t)
+  process("/lib64/libtcmalloc*.so.4").function("_ZnamSt11align_val_t") ?,
+  /*
+  // operator new(unsigned long, std::align_val_t, std::nothrow_t const&)
+  process("/lib64/libtcmalloc*.so.4").function("_ZnwmSt11align_val_tRKSt9nothrow_t") ?,
+  */
+  // operator new[](unsigned long, std::align_val_t, std::nothrow_t const&)
+  process("/lib64/libtcmalloc*.so.4").function("_ZnamSt11align_val_tRKSt9nothrow_t") ?
+  {
+      if (pid() != target() || skip_tcmalloc_cpp)
+	  next;
+      if (tc_news[tid()]++ == 0)
+	  check_signal();
+  }
+
+  probe
+  process("/lib64/libtcmalloc*.so.4").function("_Znam").return ?,
+  process("/lib64/libtcmalloc*.so.4").function("_ZnamRKSt9nothrow_t").return ?,
+  process("/lib64/libtcmalloc*.so.4").function("_ZnamSt11align_val_t").return ?,
+  process("/lib64/libtcmalloc*.so.4").function("_ZnamSt11align_val_tRKSt9nothrow_t").return ?
+  {
+      if (pid() != target() || skip_tcmalloc_cpp)
+	  next;
+      if (--tc_news[tid()] == 0) {
+	  pointer = @defined($return) ? $return : register("rax");
+	  size = @defined(@entry($arg1)) ? @entry($arg1) : @entry(register("rdi"));
+	  common_malloc(pointer, size, n_tc_new);
+      }
+  }
+
+  probe
+  /*
+  // operator delete(void*, std::nothrow_t const&)
+  process("/lib64/libtcmalloc*.so.4").function("_ZdlPvRKSt9nothrow_t") ?,
+  */
+  // operator delete[](void*, std::nothrow_t const&)
+  process("/lib64/libtcmalloc*.so.4").function("_ZdaPvRKSt9nothrow_t") ?,
+  /*
+  // operator delete(void*, unsigned long)
+  process("/lib64/libtcmalloc*.so.4").function("_ZdlPvm") ?,
+  */
+  // operator delete[](void*, unsigned long)
+  process("/lib64/libtcmalloc*.so.4").function("_ZdaPvm") ?,
+  /*
+  // operator delete(void*, std::align_val_t)
+  process("/lib64/libtcmalloc*.so.4").function("_ZdlPvSt11align_val_t") ?,
+  */
+  // operator delete[](void*, std::align_val_t)
+  process("/lib64/libtcmalloc*.so.4").function("_ZdaPvSt11align_val_t") ?,
+  /*
+  // operator delete(void*, std::align_val_t, std::nothrow_t const&)
+  process("/lib64/libtcmalloc*.so.4").function("_ZdlPvSt11align_val_tRKSt9nothrow_t") ?,
+  */
+  // operator delete[](void*, std::align_val_t, std::nothrow_t const&)
+   process("/lib64/libtcmalloc*.so.4").function("_ZdaPvSt11align_val_tRKSt9nothrow_t") ?,
+  /*
+  // operator delete(void*, unsigned long, std::align_val_t)
+  process("/lib64/libtcmalloc*.so.4").function("_ZdlPvmSt11align_val_t") ?,
+  */
+  // operator delete[](void*, unsigned long, std::align_val_t)
+  process("/lib64/libtcmalloc*.so.4").function("_ZdaPvmSt11align_val_t") ?,
+  /*
+  // operator delete(void*)
+  process("/lib64/libtcmalloc*.so.4").function("_ZdlPv") ?,
+ */
+  // operator delete[](void*)
+  process("/lib64/libtcmalloc*.so.4").function("_ZdaPv") ?
+  {
+      if (pid() != target() || skip_tcmalloc_cpp)
+	  next;
+      if (tc_deletes[tid()]++ == 0)
+	  check_signal();
+  }
+
+  probe
+  process("/lib64/libtcmalloc*.so.4").function("_ZdaPvRKSt9nothrow_t").return ?,
+  process("/lib64/libtcmalloc*.so.4").function("_ZdaPvm").return ?,
+  process("/lib64/libtcmalloc*.so.4").function("_ZdaPvSt11align_val_t").return ?,
+  process("/lib64/libtcmalloc*.so.4").function("_ZdaPvSt11align_val_tRKSt9nothrow_t").return ?,
+  process("/lib64/libtcmalloc*.so.4").function("_ZdaPvmSt11align_val_t").return ?,
+  process("/lib64/libtcmalloc*.so.4").function("_ZdaPv").return ?
+  {
+      if (pid() != target() || skip_tcmalloc_cpp)
+	  next;
+      if (--tc_deletes[tid()] == 0) {
+	  pointer = @defined(@entry($arg1)) ? @entry($arg1) : @entry(register("rdi"));
+	  common_free(pointer);
+      }
+  }
+  %)
 
 function allocator:string(address:long) {
     value = allocs[address];
@@ -1088,6 +1394,14 @@ function allocator:string(address:long) {
       if (value == n_je_realloc)	return "je_realloc";
       if (value == n_je_posix_memalign)return "je_posix_memalign";
       if (value == n_je_aligned_alloc)	return "je_aligned_alloc";
+      %)
+     %( 1 == 1 /* tcmalloc */ %?
+      if (value == n_tc_malloc)		return "tc_malloc";
+      if (value == n_tc_calloc)		return "tc_calloc";
+      if (value == n_tc_realloc)	return "tc_realloc";
+      if (value == n_tc_posix_memalign)	return "tc_posix_memalign";
+      if (value == n_tc_aligned_alloc)	return "tc_aligned_alloc";
+      if (value == n_tc_new)		return "tc operator new";
       %)
     return "???";
 }
