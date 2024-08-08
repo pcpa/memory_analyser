@@ -241,6 +241,13 @@ global n_reallocarray = 6;
 global n_posix_memalign = 7;
 global n_aligned_alloc = 8;
 global n_new = 9;
+%( 0 == 0 /* jemalloc */ %?
+ global n_je_malloc = 10;
+ global n_je_calloc = 11;
+ global n_je_realloc = 12;
+ global n_je_posix_memalign = 13;
+ global n_je_aligned_alloc = 14;
+ %)
 
 probe begin {
     tokenize(cmdline_str(), " ");
@@ -974,6 +981,96 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
     delete deletes[tid()];
 }
 
+%( 0 == 0 %?
+  probe
+  process("/lib64/libjemalloc.so.2").function("malloc") ?,
+  process("/lib64/libjemalloc.so.2").function("mallocx") ?,
+  process("/lib64/libjemalloc.so.2").function("calloc") ?,
+  process("/lib64/libjemalloc.so.2").function("realloc") ?,
+  process("/lib64/libjemalloc.so.2").function("rallocx") ?,
+  process("/lib64/libjemalloc.so.2").function("posix_memalign") ?,
+  process("/lib64/libjemalloc.so.2").function("aligned_alloc") ?
+  {
+      if (pid() != target())
+	  next;
+      check_signal();
+  }
+
+  probe
+  process("/lib64/libjemalloc.so.2").function("malloc").return ?,
+  process("/lib64/libjemalloc.so.2").function("mallocx").return ? /* Non standard */
+  {
+      if (pid() != target())
+	  next;
+      pointer = @defined($return) ? $return : register("rax");
+      size = @defined(@entry($arg1)) ? @entry($arg1) : @entry(register("rdi"));
+      common_malloc(pointer, size, n_je_malloc);
+  }
+
+  probe process("/lib64/libjemalloc.so.2").function("calloc").return ? {
+      if (pid() != target() || news[tid()])
+	  next;
+      pointer = @defined($return) ? $return : register("rax");
+      number  = @defined(@entry($arg1)) ?
+			 @entry($arg1) : @entry(register("rdi"));
+      count   = @defined(@entry($arg2)) ?
+			 @entry($arg2) : @entry(register("rsi"));
+      size = number * count;
+      if (pointer)
+	  common_malloc(pointer, size, n_je_calloc);
+  }
+
+  probe
+  process("/lib64/libjemalloc.so.2").function("realloc").return ?,
+  process("/lib64/libjemalloc.so.2").function("rallocx").return ? {
+      if (pid() != target())
+	  next;
+      new_pointer	= @defined($return) ? $return : register("rax");
+      old_pointer	= @defined(@entry($arg1)) ?
+				   @entry($arg1) : @entry(register("rdi"));
+      new_size		= @defined(@entry($arg2)) ?
+				   @entry($arg2) : @entry(register("rsi"));
+      common_realloc(new_pointer, old_pointer, new_size, n_je_realloc);
+  }
+
+  probe process("/lib64/libjemalloc.so.2").function("posix_memalign").return ? {
+      if (pid() != target())
+	  next;
+      result = @defined($return) ? $return : register("rax");
+      if (result == 0) {
+	  pointer_to_pointer = @defined(@entry($arg1)) ?
+					@entry($arg1) : register("rdi");
+	  size		   = @defined(@entry($arg3)) ?
+	  @entry($arg3) : register("rdx");
+	  pointer = user_int64(pointer_to_pointer);
+	  common_malloc(pointer, size, n_je_posix_memalign);
+      }
+  }
+
+  probe
+  process("/lib64/libjemalloc.so.2").function("aligned_alloc").return ? {
+      if (pid() != target())
+	  next;
+      pointer = @defined($return) ? $return : register("rax");
+      size    = @defined(@entry($arg2)) ?
+      @entry($arg2) : @entry(register("rsi"));
+      if (pointer)
+	  common_malloc(pointer, size, n_je_aligned_alloc);
+  }
+
+  /* XXX Note that memory is not tagged by allocator. This might be done,
+   * but if mixed allocators are used, it should crash and not worth the
+   * work to detect this. */
+  probe process("/lib64/libjemalloc.so.2").function("free") ? {
+      if (pid() != target())
+	  next;
+      check_signal();
+      pointer = @defined($arg1) ? $arg1 : register("rdi");
+      common_free(pointer);
+  }
+  %)
+
+
 function allocator:string(address:long) {
     value = allocs[address];
     if (value == n_mmap)		return "mmap";
@@ -985,6 +1082,13 @@ function allocator:string(address:long) {
     if (value == n_posix_memalign)	return "posix_memalign";
     if (value == n_aligned_alloc)	return "aligned_alloc";
     if (value == n_new)			return "operator new";
+     %( 0 == 0 /* jemalloc */ %?
+      if (value == n_je_malloc)	return "je_malloc";
+      if (value == n_je_calloc)	return "je_malloc";
+      if (value == n_je_realloc)	return "je_realloc";
+      if (value == n_je_posix_memalign)return "je_posix_memalign";
+      if (value == n_je_aligned_alloc)	return "je_aligned_alloc";
+      %)
     return "???";
 }
 
