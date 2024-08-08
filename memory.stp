@@ -184,7 +184,6 @@ global record_double_free = -1;
 /* -Gshow_mmap_syscalls=1 to display information about mmap and munmap
  * calls not done using the mmap and munmap glibc calls. */
 global show_mmap_syscalls = 0;
-
 /* -Gshow_nested_mmap_syscalls=1 to also display information about mmap
  * and munmap syscalls that are also probed in the mmap and munmap glibc
  * calls. The show_mmap_syscalls option is not explicitly set if this
@@ -192,6 +191,11 @@ global show_mmap_syscalls = 0;
  * that might not be related to allocating raw memory, but mapping files
  * in memory, and ignore mmap related calls during shared object loading. */
 global show_nested_mmap_syscalls = 0;
+/* Note that while there are two mmap syscall related options, that enable
+ * 4 states, output can be confusing because glibc in several points has
+ * mmap function calls (that are as expected probed as function calls) but
+ * instead of a matching munmap, have a direct munmap syscall releasing the
+ *  memory. */
 
 global start_gdbserver = 0;
 global gdbserver_port = 1234;
