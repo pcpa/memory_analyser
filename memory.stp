@@ -299,8 +299,13 @@ probe begin {
     tokenize(cmdline_str(), " ");
     token = tokenize("", " ");
     attached = token != "-c";
-    if (attached && token != "-t")
-	error("Use -x PID to attach to a process\n");
+    if (attached && token != "-t") {
+	error(sprintf("Failed to tokenize command line.\n"
+		      "Cannot run system wide. "
+		      "Must use '-c CMD' or '-x PID'.\n"
+		      "cmdline_str() returns <%s>\n",
+		      cmdline_str()));
+    }
     if (attached && start_gdbserver) {
 	token = tokenize("", " ");
 	pid = strtol(token, 10);
