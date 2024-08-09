@@ -616,7 +616,7 @@ probe process("/lib64/libc.so.6").function("mmap").return {
     }
 }
 
-function common_mremap(old_pointer, new_pointer, old_size, new_size, kind) {
+function common_mremap(new_pointer, old_pointer, new_size, old_size, kind) {
     recorded_old_size = 0;
     if (old_pointer) {
 	recorded_old_size = mmap_sizes[old_pointer];
@@ -629,7 +629,7 @@ function common_mremap(old_pointer, new_pointer, old_size, new_size, kind) {
 	handle_watch(old_code_address == watch_address,
 		     old_pointer && old_pointer == watch_pointer);
 	if (recorded_old_size != old_size)
-	    printf("Change in old size argument for mremap %ld - > %ld\n",
+	    printf("Change in old size argument for mremap %ld - %ld\n",
 		   recorded_old_size, old_size);
 	bytes_alloced_in_code_address[old_code_address] -= old_size;
 	if (bytes_alloced_in_code_address[old_code_address] == 0)
