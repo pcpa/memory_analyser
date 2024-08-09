@@ -196,6 +196,10 @@ global show_nested_mmap_syscalls = 0;
  * mmap function calls (that are as expected probed as function calls) but
  * instead of a matching munmap, have a direct munmap syscall releasing the
  *  memory. */
+/* -Gworkaround_mmap_mismatch=0 to not workaround patterns
+ *	syscall.mmap - process.munmap
+ *	process.mmap - syscall.munmap */
+global workaround_mmap_mismatch = 1;
 
 global start_gdbserver = 0;
 global gdbserver_port = 1234;
@@ -267,6 +271,7 @@ global count_freed_in_code_address;
 global code_probe_names;
 
 /* constants (kind of) */
+global n_syscall = 0;
 global n_mmap = 1;
 global n_mremap = 2;
 global n_malloc = 3;
@@ -400,7 +405,8 @@ function handle_invalid(pointer) {
 	     */
 	    backtrace = sprint_ubacktrace();
 	    if (backtrace =~ "__malloc_arena_thread_freeres+" ||
-		(backtrace =~ "__munmap+" && backtrace =~ "alloc_new_heap+"))
+		(backtrace =~ "__munmap+" && backtrace =~ "alloc_new_heap+") ||
+		(backtrace =~ "__munmap+" && backtrace =~ "__nptl_free_stacks+"))
 		return;
 	}
 	printf("\nInvalid/unknown pointer %p\n", pointer);
@@ -452,6 +458,10 @@ function ucaller_address:long() {
     addr = tokenize(caller, " ");
     addr = tokenize("", " ");
     return strtol(addr, 16);
+}
+
+function align_page_size:long(length) {
+    return (length + (mem_page_size() - 1)) & -mem_page_size();
 }
 
 probe
@@ -516,7 +526,8 @@ function forget(address:long) {
 probe syscall.mmap2 {
     if (pid() != target())
 	next;
-    if ((show_mmap_syscalls && !mmaps[tid()]) ||
+    if (workaround_mmap_mismatch ||
+	(show_mmap_syscalls && !mmaps[tid()]) ||
 	(show_nested_mmap_syscalls && mmaps[tid()])) {
 	/* FIXME could not recover it in the return probe */
 	mmap_lengths[tid()] = length;
@@ -534,10 +545,12 @@ probe syscall.mmap2 {
 probe syscall.mmap2.return {
     if (pid() != target())
 	next;
-    if ((show_mmap_syscalls && !mmaps[tid()]) ||
-	(show_nested_mmap_syscalls && mmaps[tid()])) {
-	pointer = @defined($return) ? $return : register("rax");
-	if (pointer != -1) {
+    pointer = @defined($return) ? $return : register("rax");
+    if (pointer != -1) {
+	if (!mmaps[tid()] && workaround_mmap_mismatch)
+	    common_mmap(pointer, mmap_lengths[tid()], n_syscall);
+	if ((show_mmap_syscalls && !mmaps[tid()]) ||
+	    (show_nested_mmap_syscalls && mmaps[tid()])) {
 	    printf("%ssyscall   MMAP(%p, %12d",
 		   mmaps[tid()] ? "*" : " ",
 		   pointer, mmap_lengths[tid()]);
@@ -570,11 +583,13 @@ probe syscall.mmap2.return {
 probe syscall.munmap {
     if (pid() != target())
 	next;
-    if ((show_mmap_syscalls && !munmaps[tid()]) ||
-	(show_nested_mmap_syscalls && munmaps[tid()]))
-	printf("%ssyscall MUNMAP(%p, %12ld)\n",
-	       munmaps[tid()] ? "*" : " ",
-	       start, length);
+      if (!munmaps[tid()] && workaround_mmap_mismatch)
+	  common_munmap(start, length, n_syscall);
+      if ((show_mmap_syscalls && !munmaps[tid()]) ||
+	  (show_nested_mmap_syscalls && munmaps[tid()]))
+	  printf("%ssyscall MUNMAP(%p, %12ld)\n",
+		 munmaps[tid()] ? "*" : " ",
+		 start, length);
 }
 
 probe syscall.munmap.return {
@@ -584,6 +599,7 @@ probe syscall.munmap.return {
 }
 
 function common_mmap(pointer, size, kind) {
+    size = align_page_size(size);
     code_address = uaddr();
     handle_watch(code_address == watch_address,
 		 pointer && pointer == watch_pointer);
@@ -617,6 +633,8 @@ probe process("/lib64/libc.so.6").function("mmap").return {
 }
 
 function common_mremap(new_pointer, old_pointer, new_size, old_size, kind) {
+    new_size = align_page_size(new_size);
+    old_size = align_page_size(old_size);
     recorded_old_size = 0;
     if (old_pointer) {
 	recorded_old_size = mmap_sizes[old_pointer];
@@ -676,45 +694,36 @@ probe process("/lib64/libc.so.6").function("mremap").return {
 
 function common_munmap(pointer, size, kind) {
     check_signal();
-    munmaps[tid()] = 1;
     new_pointer = 0;
     new_size = 0;
 
     /* These usually should only happen in glibc code, possibly due to memory
      * mapped with a direct syscall during binary load, but can also happen
      * with other binaries, that change map base or truncate the map. */
-
+    size = align_page_size(size);
     if (mmap_sizes[pointer] != size) {
-	/* Do not make computations on a possibly not aligned value. */
-	if ((size & (mem_page_size() - 1)) == 0) {
-	    /* Move the map forward */
-	    if (mmap_sizes[pointer]) {
-		new_pointer = pointer + size;
-		new_size = mmap_sizes[pointer] - size;
-	    }
-	    else {
-		/* Truncate the map */
-		foreach (map in mmap_sizes) {
-		    end = map + mmap_sizes[map];
-		    if (pointer >= map && pointer < end) {
-			if (pointer + size == end) {
-			    new_pointer = map;
-			    new_size = size;
-			}
-			else {
-			    /* FIXME Should compute the split 2 maps */
-			    printf("Not computing holes in memory maps\n");
-			    print_ubacktrace();
-			}
-			break;
-		    }
-		}
-	    }
+	/* Move the map forward */
+	if (mmap_sizes[pointer]) {
+	    new_pointer = pointer + size;
+	    new_size = mmap_sizes[pointer] - size;
 	}
 	else {
-	    /* FIXME Could adjust the value */
-	    printf("Not computing munmap on non pagesize aligned value\n");
-	    print_ubacktrace();
+	    /* Truncate the map */
+	    foreach (map in mmap_sizes) {
+		end = map + mmap_sizes[map];
+		if (pointer >= map && pointer < end) {
+		    if (pointer + size == end) {
+			new_pointer = map;
+			new_size = size;
+		    }
+		    else {
+			/* FIXME Should compute the split 2 maps */
+			printf("Not computing holes in memory maps\n");
+			print_ubacktrace();
+		    }
+		    break;
+		}
+	    }
 	}
     }
     if (mmap_sizes[pointer]) {
@@ -747,6 +756,7 @@ probe process("/lib64/libc.so.6").function("munmap") {
 	next;
     pointer = @defined($arg1) ? $arg1 : register("rdi");
     size = @defined($arg2) ? $arg2 : register("rsi");
+    munmaps[tid()] = 1;
     common_munmap(pointer, size, n_mmap);
 }
 
@@ -1144,9 +1154,6 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
 %( 1 == 1 %?
   probe
   process("/lib64/libtcmalloc*.so.4").function("sbrk") ?,
-  process("/lib64/libtcmalloc*.so.4").function("mmap") ?,
-  process("/lib64/libtcmalloc*.so.4").function("mremap") ?,
-  process("/lib64/libtcmalloc*.so.4").function("munmap") ?,
   process("/lib64/libtcmalloc*.so.4").function("malloc") ?,
   process("/lib64/libtcmalloc*.so.4").function("calloc") ?,
   process("/lib64/libtcmalloc*.so.4").function("realloc") ?,
@@ -1177,7 +1184,13 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
   }
 
   /* Not called if preloading */
-  probe process("/lib64/libtcmalloc*.so.4").function("mmap").return {
+  probe process("/lib64/libctcmalloc*.so.4").function("mmap") ? {
+      if (pid() != target())
+	  next;
+      check_signal();
+      mmaps[tid()] = 1;
+  }
+  probe process("/lib64/libtcmalloc*.so.4").function("mmap").return ? {
       if (pid() != target())
 	  next;
       pointer = @defined($return) ? $return : register("rax");
@@ -1189,7 +1202,7 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
   }
 
   /* Not called if preloading? */
-  probe process("/lib64/libtcmalloc*.so.4").function("mremap").return {
+  probe process("/lib64/libtcmalloc*.so.4").function("mremap").return ? {
       if (pid() != target())
 	  next;
       old_pointer = @defined(@entry($arg1)) ?
@@ -1202,12 +1215,18 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
       common_mremap(new_pointer, old_pointer, new_size, old_size, n_tc_mremap);
   }
 
-  /* Not called if preloading? */
-  probe process("/lib64/libtcmalloc*.so.4").function("munmap") {
+  probe process("/lib64/libctcmalloc*.so.4").function("munmap") ? {
+      if (pid() != target())
+	  next;
+      check_signal();
+      munmaps[tid()] = 1;
+  }
+  probe process("/lib64/libtcmalloc*.so.4").function("munmap") ? {
       if (pid() != target())
 	  next;
       pointer = @defined($arg1) ? $arg1 : register("rdi");
       size = @defined($arg2) ? $arg2 : register("rsi");
+      munmaps[tid()] = 1;
       common_munmap(pointer, size, n_tc_mmap);
   }
 
@@ -1396,6 +1415,7 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
 
 function allocator:string(address:long) {
     value = allocs[address];
+    if (value == n_syscall)		return "syscall";
     if (value == n_mmap)		return "mmap";
     if (value == n_mremap)		return "mremap";
     if (value == n_malloc)		return "malloc";
