@@ -196,10 +196,15 @@ global show_nested_mmap_syscalls = 0;
  * mmap function calls (that are as expected probed as function calls) but
  * instead of a matching munmap, have a direct munmap syscall releasing the
  *  memory. */
-/* -Gworkaround_mmap_mismatch=0 to not workaround patterns
+/* -Gworkaround_mmap_mismatch=1 to workaround patterns
  *	syscall.mmap - process.munmap
- *	process.mmap - syscall.munmap */
-global workaround_mmap_mismatch = 1;
+ *	process.mmap - syscall.munmap
+ * Note that this might lead to errors in the pattern:
+ * ERROR: reached end of stack before unwinding to level 1
+ * If this happen, either run with -Gworkaround_mmap_mismatch=0
+ * or --suppress-handler-errors
+ */
+global workaround_mmap_mismatch = 0;
 /* -Gignore_mmap=1 to ignore all mmap calls. Computing mmap might lead to
  * double probes, or very complex code. Disabling it should make the probes
  * faster due to less checks being done. */
