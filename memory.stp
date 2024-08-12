@@ -1093,7 +1093,7 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
   }
 
   probe process("/lib64/libjemalloc.so.2").function("calloc").return ? {
-      if (pid() != target() || news[tid()])
+      if (pid() != target())
 	  next;
       pointer = @defined($return) ? $return : register("rax");
       number  = @defined(@entry($arg1)) ?
