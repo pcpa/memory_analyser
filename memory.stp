@@ -854,14 +854,10 @@ function common_realloc(new_pointer, old_pointer, new_size, kind) {
 }
 
 probe process("/lib64/libc.so.6").function("realloc") {
-    if (pid() != target())
+    if (pid() != target() || news[tid()])
 	next;
     check_signal();
-    if (1 || realloc_null_is_malloc) {
-	if (news[tid()])
-	    next;
-	news[tid()] = 1;
-    }
+    news[tid()] = 1;
 }
 
 probe process("/lib64/libc.so.6").function("realloc").return {
@@ -873,28 +869,16 @@ probe process("/lib64/libc.so.6").function("realloc").return {
     new_size	= @defined(@entry($arg2)) ?
 			   @entry($arg2) : @entry(register("rsi"));
     common_realloc(new_pointer, old_pointer, new_size, n_realloc);
-    if (realloc_null_is_malloc)
-	delete news[tid()];
+    delete news[tid()];
 }
 
 probe process("/lib64/libc.so.6").function("reallocarray").return {
     if (pid() != target())
 	next;
-    if (1 || reallocarray_is_realloc) {
-	if (verbose)
-	    allocs[uaddr()] = n_reallocarray;
-    }
-    else {
-	new_pointer = @defined($return) ? $return : register("rax");
-	old_pointer = @defined(@entry($arg1)) ?
-			       @entry($arg1) : @entry(register("rdi"));
-	number	    = @defined(@entry($arg2)) ?
-			       @entry($arg2) : @entry(register("rsi"));
-	count	    = @defined(@entry($arg3)) ?
-			       @entry($arg3) : @entry(register("rdx"));
-	new_size = number * count;
-	common_realloc(new_pointer, old_pointer, new_size, n_reallocarray);
-    }
+    /* reallocarray checks for overflow and calls realloc.
+     * Update the allocation kind. */
+      if (verbose)
+	  allocs[uaddr()] = n_reallocarray;
 }
 
 probe process("/lib64/libc.so.6").function("posix_memalign").return {
