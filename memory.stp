@@ -209,6 +209,11 @@ global workaround_mmap_mismatch = 0;
  * double probes, or very complex code. Disabling it should make the probes
  * faster due to less checks being done. */
 global ignore_mmap = 0;
+/* -Gignore_mmap_during_alloc=0 to not ignore mmap calls during memory
+ * allocation or release. Mmap might be used to either serve a large memory
+ * allocation request, or create a heap. */
+global ignore_mmap_during_alloc = 1;
+global doing_memory_allocation;
 
 global start_gdbserver = 0;
 global gdbserver_port = 1234;
@@ -476,12 +481,18 @@ function align_page_size:long(length) {
 probe
 process("/lib64/libc.so.6").function("brk"),
 process("/lib64/libc.so.6").function("sbrk"),
-process("/lib64/libc.so.6").function("mremap"),
+process("/lib64/libc.so.6").function("mremap")
+{
+    if (pid() != target())
+	next;
+    check_signal();
+}
+
+probe
 process("/lib64/libc.so.6").function("malloc"),
 process("/lib64/libc.so.6").function("valloc"),
 process("/lib64/libc.so.6").function("pvalloc"),
 process("/lib64/libc.so.6").function("calloc"),
-process("/lib64/libc.so.6").function("reallocarray"),
 process("/lib64/libc.so.6").function("posix_memalign"),
 process("/lib64/libc.so.6").function("aligned_alloc"),
 process("/lib64/libc.so.6").function("memalign")
@@ -489,6 +500,7 @@ process("/lib64/libc.so.6").function("memalign")
     if (pid() != target())
 	next;
     check_signal();
+    ++doing_memory_allocation[tid()];
 }
 
 probe process("/lib64/libc.so.6").function("brk").return {
@@ -533,7 +545,8 @@ function forget(address:long) {
 }
 
 probe syscall.mmap2 {
-    if (ignore_mmap || pid() != target())
+    if (ignore_mmap || pid() != target() ||
+	(ignore_mmap_during_alloc && doing_memory_allocation[tid()]))
 	next;
     if (workaround_mmap_mismatch ||
 	(show_mmap_syscalls && !mmaps[tid()]) ||
@@ -552,7 +565,8 @@ probe syscall.mmap2 {
 }
 
 probe syscall.mmap2.return {
-    if (ignore_mmap || pid() != target())
+    if (ignore_mmap || pid() != target() ||
+	(ignore_mmap_during_alloc && doing_memory_allocation[tid()]))
 	next;
     pointer = @defined($return) ? $return : register("rax");
     if (pointer != -1) {
@@ -590,7 +604,8 @@ probe syscall.mmap2.return {
 }
 
 probe syscall.munmap {
-    if (ignore_mmap || pid() != target())
+    if (ignore_mmap || pid() != target() ||
+	(ignore_mmap_during_alloc && doing_memory_allocation[tid()]))
 	next;
       if (!munmaps[tid()] && workaround_mmap_mismatch)
 	  common_munmap(start, length, n_syscall);
@@ -602,7 +617,8 @@ probe syscall.munmap {
 }
 
 probe syscall.munmap.return {
-    if (ignore_mmap || pid() != target())
+    if (ignore_mmap || pid() != target() ||
+	(ignore_mmap_during_alloc && doing_memory_allocation[tid()]))
 	next;
     delete munmaps[tid()];
 }
@@ -624,14 +640,16 @@ function common_mmap(pointer, size, kind) {
 }
 
 probe process("/lib64/libc.so.6").function("mmap") {
-    if (ignore_mmap || pid() != target())
+    if (ignore_mmap || pid() != target() ||
+	(ignore_mmap_during_alloc && doing_memory_allocation[tid()]))
 	next;
     check_signal();
     mmaps[tid()] = 1;
 }
 
 probe process("/lib64/libc.so.6").function("mmap").return {
-    if (ignore_mmap || pid() != target())
+    if (ignore_mmap || pid() != target() ||
+	(ignore_mmap_during_alloc && doing_memory_allocation[tid()]))
 	next;
     pointer = @defined($return) ? $return : register("rax");
     if (pointer != -1) {
@@ -689,7 +707,8 @@ function common_mremap(new_pointer, old_pointer, new_size, old_size, kind) {
 }
 
 probe process("/lib64/libc.so.6").function("mremap").return {
-    if (ignore_mmap || pid() != target())
+    if (ignore_mmap || pid() != target() ||
+	(ignore_mmap_during_alloc && doing_memory_allocation[tid()]))
 	next;
     old_pointer = @defined(@entry($arg1)) ?
 			   @entry($arg1) : @entry(register("rdi"));
@@ -761,7 +780,8 @@ function common_munmap(pointer, size, kind) {
 }
 
 probe process("/lib64/libc.so.6").function("munmap") {
-    if (ignore_mmap || pid() != target())
+    if (ignore_mmap || pid() != target() ||
+	(ignore_mmap_during_alloc && doing_memory_allocation[tid()]))
 	next;
     pointer = @defined($arg1) ? $arg1 : register("rdi");
     size = @defined($arg2) ? $arg2 : register("rsi");
@@ -790,6 +810,9 @@ function common_malloc(pointer, size, kind) {
 	    }
 	}
     }
+    /* Do it in a single point. Only do explicitly on return probes if
+    * common_malloc() is not called. */
+    --doing_memory_allocation[tid()];
 }
 
 probe
@@ -811,8 +834,7 @@ probe process("/lib64/libc.so.6").function("calloc").return {
     number  = @defined(@entry($arg1)) ? @entry($arg1) : @entry(register("rdi"));
     count   = @defined(@entry($arg2)) ? @entry($arg2) : @entry(register("rsi"));
     size = number * count;
-    if (pointer)
-	common_malloc(pointer, size, n_calloc);
+    common_malloc(pointer, size, n_calloc);
 }
 
 function common_realloc(new_pointer, old_pointer, new_size, kind) {
@@ -856,6 +878,9 @@ function common_realloc(new_pointer, old_pointer, new_size, kind) {
 	    }
 	}
     }
+    /* Do it in a single point. Only do explicitly on return probes if
+    * common_realloc() is not called. */
+    --doing_memory_allocation[tid()];
 }
 
 probe process("/lib64/libc.so.6").function("realloc") {
@@ -863,6 +888,7 @@ probe process("/lib64/libc.so.6").function("realloc") {
 	next;
     check_signal();
     news[tid()] = 1;
+    ++doing_memory_allocation[tid()];
 }
 
 probe process("/lib64/libc.so.6").function("realloc").return {
@@ -898,6 +924,10 @@ probe process("/lib64/libc.so.6").function("posix_memalign").return {
 	pointer = user_int64(pointer_to_pointer);
 	common_malloc(pointer, size, n_posix_memalign);
     }
+    else
+	/* Make sure to have value synchronized, as it is decreased in
+	 * common_malloc() */
+	--doing_memory_allocation[tid()];
 }
 
 probe
@@ -909,8 +939,7 @@ process("/lib64/libc.so.6").function("memalign").return	/* deprecated */
     pointer = @defined($return) ? $return : register("rax");
     size    = @defined(@entry($arg2)) ?
 		       @entry($arg2) : @entry(register("rsi"));
-    if (pointer)
-	common_malloc(pointer, size, n_aligned_alloc);
+    common_malloc(pointer, size, n_aligned_alloc);
 }
 
 function common_free(pointer) {
@@ -948,7 +977,14 @@ probe process("/lib64/libc.so.6").function("free") {
 	next;
     check_signal();
     pointer = @defined($arg1) ? $arg1 : register("rdi");
+    ++doing_memory_allocation[tid()];
     common_free(pointer);
+}
+
+probe process("/lib64/libc.so.6").function("free").return {
+    if (pid() != target() || deletes[tid()])
+	next;
+    --doing_memory_allocation[tid()];
 }
 
 probe
@@ -975,6 +1011,7 @@ process("/lib64/libstdc++.so.6").function("_Znwm")
 	next;
     check_signal();
     news[tid()] = 1;
+    ++doing_memory_allocation[tid()];
 }
 
 probe
@@ -1032,6 +1069,7 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv")
     deletes[tid()] = 1;
     pointer = @defined($arg1) ? $arg1 : register("rdi");
     common_free(pointer);
+    ++doing_memory_allocation[tid()];
 }
 
 probe
@@ -1053,6 +1091,7 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
     if (pid() != target())
 	next;
     delete deletes[tid()];
+    --doing_memory_allocation[tid()];
 }
 
 %( 0 == 0 %?
@@ -1068,6 +1107,7 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
       if (pid() != target())
 	  next;
       check_signal();
+      ++doing_memory_allocation[tid()];
   }
 
   probe
@@ -1090,8 +1130,7 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
       count   = @defined(@entry($arg2)) ?
 			 @entry($arg2) : @entry(register("rsi"));
       size = number * count;
-      if (pointer)
-	  common_malloc(pointer, size, n_je_calloc);
+      common_malloc(pointer, size, n_je_calloc);
   }
 
   probe
@@ -1119,6 +1158,10 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
 	  pointer = user_int64(pointer_to_pointer);
 	  common_malloc(pointer, size, n_je_posix_memalign);
       }
+      else
+	  /* Make sure to have value synchronized, as it is decreased in
+	   * common_malloc() */
+	  --doing_memory_allocation[tid()];
   }
 
   probe
@@ -1128,8 +1171,7 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
       pointer = @defined($return) ? $return : register("rax");
       size    = @defined(@entry($arg2)) ?
       @entry($arg2) : @entry(register("rsi"));
-      if (pointer)
-	  common_malloc(pointer, size, n_je_aligned_alloc);
+      common_malloc(pointer, size, n_je_aligned_alloc);
   }
 
   /* XXX Note that memory is not tagged by allocator. This might be done,
@@ -1141,12 +1183,24 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
       check_signal();
       pointer = @defined($arg1) ? $arg1 : register("rdi");
       common_free(pointer);
+      ++doing_memory_allocation[tid()];
+  }
+  probe process("/lib64/libjemalloc.so.2").function("free").return ? {
+      if (pid() != target())
+	  next;
+      --doing_memory_allocation[tid()];
   }
   %)
 
 %( 1 == 1 %?
   probe
-  process("/lib64/libtcmalloc*.so.4").function("sbrk") ?,
+  process("/lib64/libtcmalloc*.so.4").function("sbrk") ?
+  {
+      if (pid() != target())
+	  next;
+      check_signal();
+  }
+  probe
   process("/lib64/libtcmalloc*.so.4").function("malloc") ?,
   process("/lib64/libtcmalloc*.so.4").function("calloc") ?,
   process("/lib64/libtcmalloc*.so.4").function("realloc") ?,
@@ -1156,6 +1210,7 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
       if (pid() != target())
 	  next;
       check_signal();
+      ++doing_memory_allocation[tid()];
   }
 
   probe process("/lib64/libtcmalloc*.so.4").function("sbrk").return ? {
@@ -1178,13 +1233,15 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
 
   /* Not called if preloading */
   probe process("/lib64/libctcmalloc*.so.4").function("mmap") ? {
-      if (ignore_mmap || pid() != target())
+      if (ignore_mmap || pid() != target() ||
+	  (ignore_mmap_during_alloc && doing_memory_allocation[tid()]))
 	  next;
       check_signal();
       mmaps[tid()] = 1;
   }
   probe process("/lib64/libtcmalloc*.so.4").function("mmap").return ? {
-      if (ignore_mmap || pid() != target())
+      if (ignore_mmap || pid() != target() ||
+	  (ignore_mmap_during_alloc && doing_memory_allocation[tid()]))
 	  next;
       pointer = @defined($return) ? $return : register("rax");
       if (pointer != -1) {
@@ -1196,7 +1253,8 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
 
   /* Not called if preloading? */
   probe process("/lib64/libtcmalloc*.so.4").function("mremap").return ? {
-      if (ignore_mmap || pid() != target())
+      if (ignore_mmap || pid() != target() ||
+	  (ignore_mmap_during_alloc && doing_memory_allocation[tid()]))
 	  next;
       old_pointer = @defined(@entry($arg1)) ?
 			   @entry($arg1) : @entry(register("rdi"));
@@ -1209,13 +1267,15 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
   }
 
   probe process("/lib64/libctcmalloc*.so.4").function("munmap") ? {
-      if (ignore_mmap || pid() != target())
+      if (ignore_mmap || pid() != target() ||
+	  (ignore_mmap_during_alloc && doing_memory_allocation[tid()]))
 	  next;
       check_signal();
       munmaps[tid()] = 1;
   }
   probe process("/lib64/libtcmalloc*.so.4").function("munmap") ? {
-      if (ignore_mmap || pid() != target())
+      if (ignore_mmap || pid() != target() ||
+	  (ignore_mmap_during_alloc && doing_memory_allocation[tid()]))
 	  next;
       pointer = @defined($arg1) ? $arg1 : register("rdi");
       size = @defined($arg2) ? $arg2 : register("rsi");
@@ -1235,6 +1295,10 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
 	  size = @defined(@entry($arg1)) ? @entry($arg1) : @entry(register("rdi"));
 	  common_malloc(pointer, size, n_tc_malloc);
       }
+      else
+	  /* Make sure to have value synchronized, as it is decreased in
+	   * common_malloc() */
+	  --doing_memory_allocation[tid()];
   }
 
   probe process("/lib64/libtcmalloc*.so.4").function("calloc").return ? {
@@ -1246,8 +1310,7 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
       count   = @defined(@entry($arg2)) ?
 			 @entry($arg2) : @entry(register("rsi"));
       size = number * count;
-      if (pointer)
-	  common_malloc(pointer, size, n_tc_calloc);
+      common_malloc(pointer, size, n_tc_calloc);
   }
 
   probe process("/lib64/libtcmalloc*.so.4").function("realloc").return ? {
@@ -1273,6 +1336,10 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
 	  pointer = user_int64(pointer_to_pointer);
 	  common_malloc(pointer, size, n_tc_posix_memalign);
       }
+      else
+	  /* Make sure to have value synchronized, as it is decreased in
+	   * common_malloc() */
+	  --doing_memory_allocation[tid()];
   }
 
   probe
@@ -1283,18 +1350,23 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
       pointer = @defined($return) ? $return : register("rax");
       size    = @defined(@entry($arg2)) ?
       @entry($arg2) : @entry(register("rsi"));
-      if (pointer)
-	  common_malloc(pointer, size, n_tc_aligned_alloc);
+      common_malloc(pointer, size, n_tc_aligned_alloc);
   }
 
   probe process("/lib64/libtcmalloc*.so.4").function("free") ? {
       if (pid() != target())
 	  next;
+      ++doing_memory_allocation[tid()]
       if (!tc_deletes[tid()]) {
 	  check_signal();
 	  pointer = @defined($arg1) ? $arg1 : register("rdi");
 	  common_free(pointer);
       }
+  }
+  probe process("/lib64/libtcmalloc*.so.4").function("free").return ? {
+      if (pid() != target())
+	  next;
+      --doing_memory_allocation[tid()]
   }
 
 
@@ -1326,8 +1398,10 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
   {
       if (pid() != target() || skip_tcmalloc_cpp)
 	  next;
-      if (tc_news[tid()]++ == 0)
+      if (tc_news[tid()]++ == 0) {
 	  check_signal();
+	  ++doing_memory_allocation[tid()];
+      }
   }
 
   probe
@@ -1387,6 +1461,7 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
 	  next;
       if (tc_deletes[tid()]++ == 0)
 	  check_signal();
+      ++doing_memory_allocation[tid()];
   }
 
   probe
@@ -1403,6 +1478,7 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
 	  pointer = @defined(@entry($arg1)) ? @entry($arg1) : @entry(register("rdi"));
 	  common_free(pointer);
       }
+      --doing_memory_allocation[tid()];
   }
   %)
 
