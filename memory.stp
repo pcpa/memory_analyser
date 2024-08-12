@@ -244,31 +244,6 @@ global mmap_lengths;
 %( 1 == 1 /* tcmalloc */ %?
 global tc_news;
 global tc_deletes;
-/* FIXME unless using --suppress-handler-errors it will fail with
-
-ERROR: reached end of stack before unwinding to level 1
-
-and if commenting the operator new handlers it also shows the pattern:
-
-Invalid/unknown pointer 0x55d2e871e000
- 0x7f3751216954 : _sub_I_65535_0.0+0x8e4/0x9b0 [/usr/lib64/libtcmalloc.so.4.5.15]
- 0x7f37514e6437 [/usr/lib64/ld-linux-x86-64.so.2+0x5437/0x37000]
-Pointer marked as released at code address 0x7f37512162c5 (_sub_I_65535_0.0+0x255/0x9b0 [/usr/lib64/libtcmalloc.so.4.5.15])
-
-Invalid/unknown pointer 0x55d2e8722080
- 0x7f37512363cb : _ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEE9_M_mutateEmmPKcm.constprop.0+0x10b/0x1d0 [/usr/lib64/libtcmalloc.so.4.5.15]
- 0x7f375122d968 : _ZN15MallocExtension10InitializeEv+0xd8/0x110 [/usr/lib64/libtcmalloc.so.4.5.15]
- 0x7f3751216959 : _sub_I_65535_0.0+0x8e9/0x9b0 [/usr/lib64/libtcmalloc.so.4.5.15]
- 0x7f37514e6437 [/usr/lib64/ld-linux-x86-64.so.2+0x5437/0x37000]
-
-Invalid/unknown pointer 0x55d2e8724000
- 0x7f375122d985 : _ZN15MallocExtension10InitializeEv+0xf5/0x110 [/usr/lib64/libtcmalloc.so.4.5.15]
- 0x7f3751216959 : _sub_I_65535_0.0+0x8e9/0x9b0 [/usr/lib64/libtcmalloc.so.4.5.15]
- 0x7f37514e6437 [/usr/lib64/ld-linux-x86-64.so.2+0x5437/0x37000]
-
-For now leave in a state that should work for common C code.
-*/
-global skip_tcmalloc_cpp = 1;
   %)
 
 /* alloc type in verbose mode */
@@ -468,7 +443,12 @@ function run_gdbserver(pid) {
 }
 
 function ucaller_address:long() {
-    caller = ucallers(1);
+    try {
+	caller = ucallers(1);
+    }
+    catch {
+	caller = "";
+    };
     addr = tokenize(caller, " ");
     addr = tokenize("", " ");
     return strtol(addr, 16);
@@ -1396,7 +1376,7 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
   // operator new[](unsigned long, std::align_val_t, std::nothrow_t const&)
   process("/lib64/libtcmalloc*.so.4").function("_ZnamSt11align_val_tRKSt9nothrow_t") ?
   {
-      if (pid() != target() || skip_tcmalloc_cpp)
+      if (pid() != target())
 	  next;
       if (tc_news[tid()]++ == 0) {
 	  check_signal();
@@ -1410,7 +1390,7 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
   process("/lib64/libtcmalloc*.so.4").function("_ZnamSt11align_val_t").return ?,
   process("/lib64/libtcmalloc*.so.4").function("_ZnamSt11align_val_tRKSt9nothrow_t").return ?
   {
-      if (pid() != target() || skip_tcmalloc_cpp)
+      if (pid() != target())
 	  next;
       if (--tc_news[tid()] == 0) {
 	  pointer = @defined($return) ? $return : register("rax");
@@ -1457,7 +1437,7 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
   // operator delete[](void*)
   process("/lib64/libtcmalloc*.so.4").function("_ZdaPv") ?
   {
-      if (pid() != target() || skip_tcmalloc_cpp)
+      if (pid() != target())
 	  next;
       if (tc_deletes[tid()]++ == 0)
 	  check_signal();
@@ -1472,7 +1452,7 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
   process("/lib64/libtcmalloc*.so.4").function("_ZdaPvmSt11align_val_t").return ?,
   process("/lib64/libtcmalloc*.so.4").function("_ZdaPv").return ?
   {
-      if (pid() != target() || skip_tcmalloc_cpp)
+      if (pid() != target())
 	  next;
       if (--tc_deletes[tid()] == 0) {
 	  pointer = @defined(@entry($arg1)) ? @entry($arg1) : @entry(register("rdi"));
