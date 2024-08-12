@@ -200,6 +200,10 @@ global show_nested_mmap_syscalls = 0;
  *	syscall.mmap - process.munmap
  *	process.mmap - syscall.munmap */
 global workaround_mmap_mismatch = 1;
+/* -Gignore_mmap=1 to ignore all mmap calls. Computing mmap might lead to
+ * double probes, or very complex code. Disabling it should make the probes
+ * faster due to less checks being done. */
+global ignore_mmap = 0;
 
 global start_gdbserver = 0;
 global gdbserver_port = 1234;
@@ -524,7 +528,7 @@ function forget(address:long) {
 }
 
 probe syscall.mmap2 {
-    if (pid() != target())
+    if (ignore_mmap || pid() != target())
 	next;
     if (workaround_mmap_mismatch ||
 	(show_mmap_syscalls && !mmaps[tid()]) ||
@@ -543,7 +547,7 @@ probe syscall.mmap2 {
 }
 
 probe syscall.mmap2.return {
-    if (pid() != target())
+    if (ignore_mmap || pid() != target())
 	next;
     pointer = @defined($return) ? $return : register("rax");
     if (pointer != -1) {
@@ -581,7 +585,7 @@ probe syscall.mmap2.return {
 }
 
 probe syscall.munmap {
-    if (pid() != target())
+    if (ignore_mmap || pid() != target())
 	next;
       if (!munmaps[tid()] && workaround_mmap_mismatch)
 	  common_munmap(start, length, n_syscall);
@@ -593,7 +597,7 @@ probe syscall.munmap {
 }
 
 probe syscall.munmap.return {
-    if (pid() != target())
+    if (ignore_mmap || pid() != target())
 	next;
     delete munmaps[tid()];
 }
@@ -615,14 +619,14 @@ function common_mmap(pointer, size, kind) {
 }
 
 probe process("/lib64/libc.so.6").function("mmap") {
-    if (pid() != target())
+    if (ignore_mmap || pid() != target())
 	next;
     check_signal();
     mmaps[tid()] = 1;
 }
 
 probe process("/lib64/libc.so.6").function("mmap").return {
-    if (pid() != target())
+    if (ignore_mmap || pid() != target())
 	next;
     pointer = @defined($return) ? $return : register("rax");
     if (pointer != -1) {
@@ -680,7 +684,7 @@ function common_mremap(new_pointer, old_pointer, new_size, old_size, kind) {
 }
 
 probe process("/lib64/libc.so.6").function("mremap").return {
-    if (pid() != target())
+    if (ignore_mmap || pid() != target())
 	next;
     old_pointer = @defined(@entry($arg1)) ?
 			   @entry($arg1) : @entry(register("rdi"));
@@ -752,7 +756,7 @@ function common_munmap(pointer, size, kind) {
 }
 
 probe process("/lib64/libc.so.6").function("munmap") {
-    if (pid() != target())
+    if (ignore_mmap || pid() != target())
 	next;
     pointer = @defined($arg1) ? $arg1 : register("rdi");
     size = @defined($arg2) ? $arg2 : register("rsi");
@@ -1185,13 +1189,13 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
 
   /* Not called if preloading */
   probe process("/lib64/libctcmalloc*.so.4").function("mmap") ? {
-      if (pid() != target())
+      if (ignore_mmap || pid() != target())
 	  next;
       check_signal();
       mmaps[tid()] = 1;
   }
   probe process("/lib64/libtcmalloc*.so.4").function("mmap").return ? {
-      if (pid() != target())
+      if (ignore_mmap || pid() != target())
 	  next;
       pointer = @defined($return) ? $return : register("rax");
       if (pointer != -1) {
@@ -1203,7 +1207,7 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
 
   /* Not called if preloading? */
   probe process("/lib64/libtcmalloc*.so.4").function("mremap").return ? {
-      if (pid() != target())
+      if (ignore_mmap || pid() != target())
 	  next;
       old_pointer = @defined(@entry($arg1)) ?
 			   @entry($arg1) : @entry(register("rdi"));
@@ -1216,13 +1220,13 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
   }
 
   probe process("/lib64/libctcmalloc*.so.4").function("munmap") ? {
-      if (pid() != target())
+      if (ignore_mmap || pid() != target())
 	  next;
       check_signal();
       munmaps[tid()] = 1;
   }
   probe process("/lib64/libtcmalloc*.so.4").function("munmap") ? {
-      if (pid() != target())
+      if (ignore_mmap || pid() != target())
 	  next;
       pointer = @defined($arg1) ? $arg1 : register("rdi");
       size = @defined($arg2) ? $arg2 : register("rsi");
