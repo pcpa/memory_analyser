@@ -229,11 +229,6 @@ global binary_path_for_gdbserver = "";
 /* Start pretending it did attach to running process. Changed in begin probe, */
 global attached = 1;
 
-/* avoid realloc return probe computed twice */
-global realloc_null_is_malloc = 1;
-/* avoid reallocarray and realloc return probes being computed */
-global reallocarray_is_realloc = 1;
-
 /* avoid double stats */
 global news;
 global deletes;
