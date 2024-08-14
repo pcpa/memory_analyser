@@ -246,6 +246,10 @@ global tc_news;
 global tc_deletes;
   %)
 
+%( 2 == 2 /* mimalloc */ %?
+global mi_deletes;
+  %)
+
 /* alloc type in verbose mode */
 global allocs;
 
@@ -287,6 +291,16 @@ global n_new = 9;
   global n_tc_posix_memalign = 21;
   global n_tc_aligned_alloc = 22;
   global n_tc_new = 23;
+  %)
+%( 2 == 2 /* mimalloc */ %?
+      global n_mi_malloc = 24;
+      global n_mi_calloc = 25;
+      global n_mi_realloc = 26;
+      global n_mi_reallocarray = 27;
+      global n_mi_posix_memalign = 28;
+      global n_mi_aligned_alloc = 29;
+      global n_mi_strdup = 30;
+      global n_mi_new = 31;
   %)
 
 probe begin {
@@ -1462,6 +1476,247 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
   }
   %)
 
+%( 2 == 2 /* mimalloc */ %?
+  probe
+  process("/lib64/libmimalloc*.so.2").function("malloc") ?,
+  process("/lib64/libmimalloc*.so.2").function("calloc") ?,
+  process("/lib64/libmimalloc*.so.2").function("realloc") ?,
+  process("/lib64/libmimalloc*.so.2").function("reallocf") ?,
+  process("/lib64/libmimalloc*.so.2").function("reallocarray") ?,
+  process("/lib64/libmimalloc*.so.2").function("posix_memalign") ?,
+  process("/lib64/libmimalloc*.so.2").function("aligned_alloc") ?,
+  process("/lib64/libmimalloc*.so.2").function("strdup") ?,
+  process("/lib64/libmimalloc*.so.2").function("strndup") ?
+  {
+      if (pid() != target())
+	  next;
+      check_signal();
+      ++doing_memory_allocation[tid()];
+  }
+
+  probe
+  process("/lib64/libmimalloc*.so.2").function("malloc").return ?,
+  process("/lib64/libmimalloc*.so.2").function("valloc").return ?, /* deprecated */
+  process("/lib64/libmimalloc*.so.2").function("pvalloc").return ? /* deprecated */
+  {
+      if (pid() != target())
+	  next;
+      pointer = @defined($return) ? $return : register("rax");
+      size = @defined(@entry($arg1)) ? @entry($arg1) : @entry(register("rdi"));
+      common_malloc(pointer, size, n_mi_malloc);
+  }
+
+  probe process("/lib64/libmimalloc*.so.2").function("calloc").return ? {
+      if (pid() != target())
+	  next;
+      pointer = @defined($return) ? $return : register("rax");
+      number  = @defined(@entry($arg1)) ?
+			 @entry($arg1) : @entry(register("rdi"));
+      count   = @defined(@entry($arg2)) ?
+			 @entry($arg2) : @entry(register("rsi"));
+      size = number * count;
+      common_malloc(pointer, size, n_mi_calloc);
+  }
+
+  probe
+  process("/lib64/libmimalloc*.so.2").function("realloc").return ?,
+  process("/lib64/libmimalloc*.so.2").function("reallocf").return ? {
+      if (pid() != target())
+	  next;
+      new_pointer	= @defined($return) ? $return : register("rax");
+      old_pointer	= @defined(@entry($arg1)) ?
+				   @entry($arg1) : @entry(register("rdi"));
+      new_size		= @defined(@entry($arg2)) ?
+				   @entry($arg2) : @entry(register("rsi"));
+      common_realloc(new_pointer, old_pointer, new_size, n_mi_realloc);
+  }
+
+  probe process("/lib64/libmimalloc*.so.2").function("reallocarray").return ? {
+      if (pid() != target())
+	  next;
+      new_pointer	= @defined($return) ? $return : register("rax");
+      old_pointer	= @defined(@entry($arg1)) ?
+				   @entry($arg1) : @entry(register("rdi"));
+      nmemb		= @defined(@entry($arg2)) ?
+				   @entry($arg2) : @entry(register("rsi"));
+      size		= @defined(@entry($arg3)) ?
+				   @entry($arg3) : @entry(register("rdx"));
+      /* ignore overflow as it should have been handled in error path */
+      new_size = nmemb * size;
+      common_realloc(new_pointer, old_pointer, new_size, n_mi_reallocarray);
+  }
+
+  probe process("/lib64/libmimalloc*.so.2").function("posix_memalign").return ? {
+      if (pid() != target())
+	  next;
+      result = @defined($return) ? $return : register("rax");
+      if (result == 0) {
+	  pointer_to_pointer = @defined(@entry($arg1)) ?
+					@entry($arg1) : register("rdi");
+	  size		   = @defined(@entry($arg3)) ?
+	  @entry($arg3) : register("rdx");
+	  pointer = user_int64(pointer_to_pointer);
+	  common_malloc(pointer, size, n_mi_posix_memalign);
+      }
+      else
+	  /* Make sure to have value synchronized, as it is decreased in
+	   * common_malloc() */
+	  --doing_memory_allocation[tid()];
+  }
+
+  probe
+  process("/lib64/libmimalloc*.so.2").function("aligned_alloc").return ?,
+  process("/lib64/libmimalloc*.so.2").function("memalign").return ? {
+      if (pid() != target())
+	  next;
+      pointer = @defined($return) ? $return : register("rax");
+      size    = @defined(@entry($arg2)) ?
+      @entry($arg2) : @entry(register("rsi"));
+      common_malloc(pointer, size, n_mi_aligned_alloc);
+  }
+
+  probe
+  process("/lib64/libmimalloc*.so.2").function("strdup").return ?,
+  process("/lib64/libmimalloc*.so.2").function("strndup").return ? {
+    if (pid() != target())
+	next;
+    pointer = @defined($return) ? $return : register("rax");
+    if (pointer) {
+	str = user_string(pointer);
+	size = strlen(str) + 1;
+	common_malloc(pointer, size, n_mi_strdup);
+    }
+    else
+	/* Make sure to have value synchronized, as it is decreased in
+	 * common_malloc() */
+	--doing_memory_allocation[tid()];
+  }
+
+  probe process("/lib64/libmimalloc*.so.2").function("free") ? {
+      if (pid() != target())
+	  next;
+      ++doing_memory_allocation[tid()]
+      if (!mi_deletes[tid()]) {
+	  check_signal();
+	  pointer = @defined($arg1) ? $arg1 : register("rdi");
+	  common_free(pointer);
+      }
+  }
+  probe process("/lib64/libmimalloc*.so.2").function("free").return ? {
+      if (pid() != target())
+	  next;
+      --doing_memory_allocation[tid()]
+  }
+
+
+  probe
+  /*
+  // operator new(unsigned long)
+  process("/lib64/libmimalloc*.so.2").function("_Znwm") ?,
+ */
+  // operator new[](unsigned long)
+  process("/lib64/libmimalloc*.so.2").function("_Znam") ?,
+  /*
+  // operator new(unsigned long, std::nothrow_t const&)
+  process("/lib64/libmimalloc*.so.2").function("_ZnwmRKSt9nothrow_t") ?,
+  */
+  // operator new[](unsigned long, std::nothrow_t const&)
+  process("/lib64/libmimalloc*.so.2").function("_ZnamRKSt9nothrow_t") ?,
+  /*
+  // operator new(unsigned long, std::align_val_t)
+  process("/lib64/libmimalloc*.so.2").function("_ZnwmSt11align_val_t") ?,
+  */
+  // operator new[](unsigned long, std::align_val_t)
+  process("/lib64/libmimalloc*.so.2").function("_ZnamSt11align_val_t") ?,
+  /*
+  // operator new(unsigned long, std::align_val_t, std::nothrow_t const&)
+  process("/lib64/libmimalloc*.so.2").function("_ZnwmSt11align_val_tRKSt9nothrow_t") ?,
+  */
+  // operator new[](unsigned long, std::align_val_t, std::nothrow_t const&)
+  process("/lib64/libmimalloc*.so.2").function("_ZnamSt11align_val_tRKSt9nothrow_t") ?
+  {
+      if (pid() != target())
+	  next;
+      check_signal();
+      ++doing_memory_allocation[tid()];
+  }
+
+  probe
+  process("/lib64/libmimalloc*.so.2").function("_Znam").return ?,
+  process("/lib64/libmimalloc*.so.2").function("_ZnamRKSt9nothrow_t").return ?,
+  process("/lib64/libmimalloc*.so.2").function("_ZnamSt11align_val_t").return ?,
+  process("/lib64/libmimalloc*.so.2").function("_ZnamSt11align_val_tRKSt9nothrow_t").return ?
+  {
+      if (pid() != target())
+	  next;
+      pointer = @defined($return) ? $return : register("rax");
+      size = @defined(@entry($arg1)) ? @entry($arg1) : @entry(register("rdi"));
+      common_malloc(pointer, size, n_mi_new);
+  }
+
+  probe
+  /*
+  // operator delete(void*, std::nothrow_t const&)
+  process("/lib64/libmimalloc*.so.2").function("_ZdlPvRKSt9nothrow_t") ?,
+  */
+  // operator delete[](void*, std::nothrow_t const&)
+  process("/lib64/libmimalloc*.so.2").function("_ZdaPvRKSt9nothrow_t") ?,
+  /*
+  // operator delete(void*, unsigned long)
+  process("/lib64/libmimalloc*.so.2").function("_ZdlPvm") ?,
+  */
+  // operator delete[](void*, unsigned long)
+  process("/lib64/libmimalloc*.so.2").function("_ZdaPvm") ?,
+  /*
+  // operator delete(void*, std::align_val_t)
+  process("/lib64/libmimalloc*.so.2").function("_ZdlPvSt11align_val_t") ?,
+  */
+  // operator delete[](void*, std::align_val_t)
+  process("/lib64/libmimalloc*.so.2").function("_ZdaPvSt11align_val_t") ?,
+  /*
+  // operator delete(void*, std::align_val_t, std::nothrow_t const&)
+  process("/lib64/libmimalloc*.so.2").function("_ZdlPvSt11align_val_tRKSt9nothrow_t") ?,
+  */
+  // operator delete[](void*, std::align_val_t, std::nothrow_t const&)
+   process("/lib64/libmimalloc*.so.2").function("_ZdaPvSt11align_val_tRKSt9nothrow_t") ?,
+  /*
+  // operator delete(void*, unsigned long, std::align_val_t)
+  process("/lib64/libmimalloc*.so.2").function("_ZdlPvmSt11align_val_t") ?,
+  */
+  // operator delete[](void*, unsigned long, std::align_val_t)
+  process("/lib64/libmimalloc*.so.2").function("_ZdaPvmSt11align_val_t") ?,
+  /*
+  // operator delete(void*)
+  process("/lib64/libmimalloc*.so.2").function("_ZdlPv") ?,
+ */
+  // operator delete[](void*)
+  process("/lib64/libmimalloc*.so.2").function("_ZdaPv") ?
+  {
+      if (pid() != target())
+	  next;
+      if (mi_deletes[tid()]++ == 0)
+	  check_signal();
+      ++doing_memory_allocation[tid()];
+  }
+
+  probe
+  process("/lib64/libmimalloc*.so.2").function("_ZdaPvRKSt9nothrow_t").return ?,
+  process("/lib64/libmimalloc*.so.2").function("_ZdaPvm").return ?,
+  process("/lib64/libmimalloc*.so.2").function("_ZdaPvSt11align_val_t").return ?,
+  process("/lib64/libmimalloc*.so.2").function("_ZdaPvSt11align_val_tRKSt9nothrow_t").return ?,
+  process("/lib64/libmimalloc*.so.2").function("_ZdaPvmSt11align_val_t").return ?,
+  process("/lib64/libmimalloc*.so.2").function("_ZdaPv").return ?
+  {
+      if (pid() != target())
+	  next;
+      if (--mi_deletes[tid()] == 0) {
+	  pointer = @defined(@entry($arg1)) ? @entry($arg1) : @entry(register("rdi"));
+	  common_free(pointer);
+      }
+      --doing_memory_allocation[tid()];
+  }
+  %)
+
 function allocator:string(address:long) {
     value = allocs[address];
     if (value == n_syscall)		return "syscall";
@@ -1488,6 +1743,16 @@ function allocator:string(address:long) {
       if (value == n_tc_posix_memalign)	return "tc_posix_memalign";
       if (value == n_tc_aligned_alloc)	return "tc_aligned_alloc";
       if (value == n_tc_new)		return "tc operator new";
+      %)
+    %( 2 == 2 /* mimalloc */ %?
+      if (value == n_mi_malloc)		return "mi_malloc";
+      if (value == n_mi_calloc)		return "mi_calloc";
+      if (value == n_mi_realloc)	return "mi_realloc";
+      if (value == n_mi_reallocarray)	return "mi_reallocarray";
+      if (value == n_mi_posix_memalign)	return "mi_posix_memalign";
+      if (value == n_mi_aligned_alloc)	return "mi_aligned_alloc";
+      if (value == n_mi_strdup)		return "mi_strdup";
+      if (value == n_mi_new)		return "mi operator new";
       %)
     return "???";
 }
