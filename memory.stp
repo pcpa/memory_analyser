@@ -1821,6 +1821,20 @@ function report() {
 	printf("Bogus Heap  %54ld (%16p)\n", break_alloc, break_alloc);
 	printf("Bogus NoMap %54ld (%16p)\n", total_nomap, total_nomap);
     }
+    /* FIXME
+semantic error: invalid access '->count' for array type: operator '->' at /usr/share/systemtap/tapset/linux/proc_mem.stp:92:38
+        source: 	val = atomic_long_read(&mm->rss_stat->count[member])
+     */
+    %(kernel_v < "6.9" %?
+      printf("Program data size (data + stack)            : %ld\n",
+	     proc_mem_data() * mem_page_size());
+      printf("Total program virtual memory size           : %ld\n",
+	     proc_mem_size() * mem_page_size());
+      printf(" Program shared pages (from shared mappings): %ld\n",
+	     proc_mem_shr() * mem_page_size());
+      printf("Program resident set size                   : %ld\n",
+	     proc_mem_rss() * mem_page_size());
+      %)
 }
 
 probe signal.send {
