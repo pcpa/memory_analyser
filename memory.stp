@@ -1,16 +1,15 @@
 #!/usr/bin/stap
 
 /*
- - Simple memory usage diagnostics tool, requires glibc  and libstdc++
- - As long as systemtap works during execution, otherwise see:
+ - Simple memory usage diagnostics tool, requires glibc  and libstdc++,
+   but should also work with jemalloc, tcmalloc and mimalloc, as long as
+   systemtap works during execution, otherwise see:
    https://sourceware.org/systemtap/wiki/TipExhaustedResourceErrors
-   it should only not list memory allocated with direct syscalls or
-   get confused with munmap calls that release partial amounts of memory
- - Calls to mmap actually maping a file in memory might also end
-   with inconsistent results
+ - Complex mmap calls to mmap usually maping a file in memory might end
+   with showing inconsistent results
 
- - Once the program exits, or receives a SIGURG, a diagnostic is printed of
-   all known memory allocations.
+ - Once the program exits, or receives a SIGURG, a diagnostic of all known
+   memory allocations is printed.
  - The script attempts to do its best to keep track of memory allocation and
    release to avoid printing misleading data, but it almost certainly has
    bugs.

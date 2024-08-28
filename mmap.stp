@@ -2,17 +2,23 @@
 
 /*
  - Simple memory usage diagnostic tool that does not rely on user level
- - As long as systemtap works during execution, otherwise see:
+as long as systemtap works during execution, otherwise see:
    https://sourceware.org/systemtap/wiki/TipExhaustedResourceErrors
 
- - The idea is to compute memory usage only proving mmap and munmap and
-   get information on memory usage. Usually this script should be used on
-   an environment that has too high memory usage and it is required to
-   get some idea of from where to start inspecting code.
- - If high memory usage is too much spread over the code this might not
-   provide much useful information due to excessive report data.
+ - Once the program exits, or receives a SIGURG, a diagnostic of all known
+   memory maps is printed.
+ - The script attempts to do its best to keep track of memory allocation and
+   release to avoid printing misleading data, but it almost certainly has
+   bugs or special cases not properly handled.
 
-  Note that without debug information it might show mostly useess information:
+ - The idea is to compute memory usage only probing brk, mmap, mremap and
+   munmap syscalls, getting information on memory usage. Usually this script
+   should be used in an environment that has too high memory usage and it is
+   required to get some idea of from where to start inspecting code.
+ - If high memory usage is too much spread over the code this might not
+   provide much useful information due to excessive noise in reported data.
+
+  Note that without debug information it might show mostly useless information:
  $ stap -DMAXMAPENTRIES=262144 -DSTP_OVERLOAD_THRESHOLD=1073741824LL -DSTP_OVERLOAD_INTERVAL=2147483648LL -DMAXACTION=65536 -DMAXSTRINGLEN=4096 mmap.stp -c ls
 Stap ready.
 memory.stp  mmap.stp  README
@@ -120,9 +126,12 @@ _dl_sysdep_start+0x86 [ld-linux-x86-64.so.2]
 _dl_start+0x5de [ld-linux-x86-64.so.2]
 _dl_help+0x2f8 [ld-linux-x86-64.so.2]
 Stap done.
+
+  It might show negative values when glibc returns memory to the system
+calling the brk syscall to reduce the (main_arena) heap size.
  */
 
-/* Use an integer as hashmap keys instead of string backtrace. */
+/* Use integers as hashmap keys instead of backtrace strings. */
 global backtrace_to_key;
 global key_to_backtrace;
 global next_unique_id = 0;
@@ -199,7 +208,6 @@ probe syscall.mmap2 {
     if (pid() != target())
 	next;
     mmap_length[tid()] = align_page_size(length);
-    //print_ubacktrace_fileline();
 }
 
 probe syscall.mmap2.return {
