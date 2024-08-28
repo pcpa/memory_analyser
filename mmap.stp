@@ -330,6 +330,7 @@ function reset() {
     delete mremap_old_length;
     delete mremap_new_length;
     delete break_keys;
+    break_start = break_end = 0;
 }
 
 probe kprocess.exec {
