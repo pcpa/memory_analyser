@@ -1,0 +1,358 @@
+#!/usr/bin/stap
+
+/*
+ - Simple memory usage diagnostic tool that does not rely on user level
+ - As long as systemtap works during execution, otherwise see:
+   https://sourceware.org/systemtap/wiki/TipExhaustedResourceErrors
+
+ - The idea is to compute memory usage only proving mmap and munmap and
+   get information on memory usage. Usually this script should be used on
+   an environment that has too high memory usage and it is required to
+   get some idea of from where to start inspecting code.
+ - If high memory usage is too much spread over the code this might not
+   provide much useful information due to excessive report data.
+
+  Note that without debug information it might show mostly useess information:
+ $ stap -DMAXMAPENTRIES=262144 -DSTP_OVERLOAD_THRESHOLD=1073741824LL -DSTP_OVERLOAD_INTERVAL=2147483648LL -DMAXACTION=65536 -DMAXSTRINGLEN=4096 mmap.stp -c ls
+Stap ready.
+memory.stp  mmap.stp  README
+
+Report for ls ("/usr/bin/ls", ["ls"], ["SHELL=/bin/bash", ...]
+==  229756928 bytes:
+0x7f7f5a0c446c [libc.so.6+0x11746c]
+==  5877760 bytes:
+0x7f7f5a21d57c [ld-linux-x86-64.so.2+0x2357c]
+== * 135168 bytes:
+0x7f7f5a0bca9b [libc.so.6+0x10fa9b]
+Stap done.
+
+ But with debuginfo it can show very detailed information:
+ $ stap -d /usr/lib64/libc.so.6 -d /usr/lib64/ld-linux-x86-64.so.2 -d /usr/lib64/libselinux.so.1 -DMAXMAPENTRIES=262144 -DSTP_OVERLOAD_THRESHOLD=1073741824LL -DSTP_OVERLOAD_INTERVAL=2147483648LL -DMAXACTION=65536 -DMAXSTRINGLEN=4096 mmap.stp -c ls
+Stap ready.
+memory.stp  mmap.stp  README
+
+Report for ls ("/usr/bin/ls", ["ls"], ["SHELL=/bin/bash", ...]
+==  229756928 bytes:
+mmap64+0x2c [libc.so.6]
+_nl_load_locale_from_archive+0x4e6 [libc.so.6]
+_nl_find_locale+0xf9 [libc.so.6]
+setlocale+0x3fc [libc.so.6]
+main+0xde [ls]
+__libc_start_call_main+0x78 [libc.so.6]
+__libc_start_main@GLIBC_2.2.5+0x8b [libc.so.6]
+_start+0x25 [ls]
+==  2928640 bytes:
+mmap64+0x2c [ld-linux-x86-64.so.2]
+_dl_map_object_from_fd+0x41c [ld-linux-x86-64.so.2]
+_dl_map_object+0x270 [ld-linux-x86-64.so.2]
+openaux+0x3d [ld-linux-x86-64.so.2]
+_dl_catch_exception+0xa3 [ld-linux-x86-64.so.2]
+_dl_map_object_deps+0x458 [ld-linux-x86-64.so.2]
+dl_main+0x191f [ld-linux-x86-64.so.2]
+_dl_sysdep_start+0x86 [ld-linux-x86-64.so.2]
+_dl_start+0x5de [ld-linux-x86-64.so.2]
+_dl_help+0x2f8 [ld-linux-x86-64.so.2]
+==  2678784 bytes:
+mmap64+0x2c [ld-linux-x86-64.so.2]
+_dl_map_object_from_fd+0x58b [ld-linux-x86-64.so.2]
+_dl_map_object+0x270 [ld-linux-x86-64.so.2]
+openaux+0x3d [ld-linux-x86-64.so.2]
+_dl_catch_exception+0xa3 [ld-linux-x86-64.so.2]
+_dl_map_object_deps+0x458 [ld-linux-x86-64.so.2]
+dl_main+0x191f [ld-linux-x86-64.so.2]
+_dl_sysdep_start+0x86 [ld-linux-x86-64.so.2]
+_dl_start+0x5de [ld-linux-x86-64.so.2]
+_dl_help+0x2f8 [ld-linux-x86-64.so.2]
+==  212992 bytes:
+mmap64+0x2c [ld-linux-x86-64.so.2]
+_dl_sysdep_read_whole_file+0x9d [ld-linux-x86-64.so.2]
+_dl_load_cache_lookup+0x13c [ld-linux-x86-64.so.2]
+_dl_map_object+0x4d8 [ld-linux-x86-64.so.2]
+openaux+0x3d [ld-linux-x86-64.so.2]
+_dl_catch_exception+0xa3 [ld-linux-x86-64.so.2]
+_dl_map_object_deps+0x458 [ld-linux-x86-64.so.2]
+dl_main+0x191f [ld-linux-x86-64.so.2]
+_dl_sysdep_start+0x86 [ld-linux-x86-64.so.2]
+_dl_start+0x5de [ld-linux-x86-64.so.2]
+_dl_help+0x2f8 [ld-linux-x86-64.so.2]
+== * 135168 bytes:
+brk+0xb [libc.so.6]
+sbrk+0x6c [libc.so.6]
+__default_morecore@GLIBC_2.2.5+0x16 [libc.so.6]
+sysmalloc+0x57c [libc.so.6]
+_int_malloc+0xd3a [libc.so.6]
+tcache_init.part.0+0x37 [libc.so.6]
+malloc+0x126 [libc.so.6]
+strdup+0x1f [libc.so.6]
+verify_selinuxmnt+0x9c [libselinux.so.1]
+init_lib+0x91 [libselinux.so.1]
+call_init+0xd7 [ld-linux-x86-64.so.2]
+_dl_init+0x7d [ld-linux-x86-64.so.2]
+_dl_help+0x350 [ld-linux-x86-64.so.2]
+==  40960 bytes:
+mmap64+0x2c [ld-linux-x86-64.so.2]
+_dl_map_object_from_fd+0x110e [ld-linux-x86-64.so.2]
+_dl_map_object+0x270 [ld-linux-x86-64.so.2]
+openaux+0x3d [ld-linux-x86-64.so.2]
+_dl_catch_exception+0xa3 [ld-linux-x86-64.so.2]
+_dl_map_object_deps+0x458 [ld-linux-x86-64.so.2]
+dl_main+0x191f [ld-linux-x86-64.so.2]
+_dl_sysdep_start+0x86 [ld-linux-x86-64.so.2]
+_dl_start+0x5de [ld-linux-x86-64.so.2]
+_dl_help+0x2f8 [ld-linux-x86-64.so.2]
+==  8192 bytes:
+mmap64+0x2c [ld-linux-x86-64.so.2]
+__minimal_malloc+0xb1 [ld-linux-x86-64.so.2]
+_dl_init_paths+0x8b [ld-linux-x86-64.so.2]
+dl_main+0x169c [ld-linux-x86-64.so.2]
+_dl_sysdep_start+0x86 [ld-linux-x86-64.so.2]
+_dl_start+0x5de [ld-linux-x86-64.so.2]
+_dl_help+0x2f8 [ld-linux-x86-64.so.2]
+==  8192 bytes:
+mmap64+0x2c [ld-linux-x86-64.so.2]
+__minimal_malloc+0xb1 [ld-linux-x86-64.so.2]
+_dl_check_map_versions+0x5c0 [ld-linux-x86-64.so.2]
+_dl_check_all_versions+0x50 [ld-linux-x86-64.so.2]
+version_check_doit+0x24 [ld-linux-x86-64.so.2]
+_dl_receive_error+0x3c [ld-linux-x86-64.so.2]
+dl_main+0x1a94 [ld-linux-x86-64.so.2]
+_dl_sysdep_start+0x86 [ld-linux-x86-64.so.2]
+_dl_start+0x5de [ld-linux-x86-64.so.2]
+_dl_help+0x2f8 [ld-linux-x86-64.so.2]
+Stap done.
+ */
+
+/* Use an integer as hashmap keys instead of string backtrace. */
+global backtrace_to_key;
+global key_to_backtrace;
+global next_unique_id = 0;
+
+/* Map pointer returned by mmap to a backtrace. */
+global pointer_backtrace_map;
+/* Map pointer returned by mmap to its size. */
+global pointer_length_map;
+
+global break_start;
+global break_end;
+global break_keys;
+
+/* Record amount of memory allocated from a common place in code.
+ * Here we *hope* that the mmap syscall happens as a side effect of a
+ * memory allocation, that cannot be satisfied, and the memory management
+ * code calls mmap to either return the memory, create or resize a heap.
+ * This should be the most important information this script can get,
+ * and for the script use case, that is to debug high memory usage.
+ */
+global bytes_alloced_in_backtrace;
+
+/* At least recent kernel or systemtap versions cannot get @entry arguments
+ * for the mmap2 syscall. Record it in the entry probe, and handle it in
+ * the return probe when it succeeds. */
+global mmap_length;
+global mremap_old_pointer;
+global mremap_old_length;
+global mremap_new_length;
+
+global process_name = "";
+global process_arguments, exec_process_arguments;
+
+global detailed_report;
+
+probe begin {
+    printf("Stap ready.\n");
+}
+
+function align_page_size:long(length) {
+    return (length + (mem_page_size() - 1)) & -mem_page_size();
+}
+
+function get_unique_id:long(backtrace:string) {
+    key = backtrace_to_key[backtrace];
+    if (!key) {
+	/* This should never overflow */
+	key = ++next_unique_id;
+	key_to_backtrace[key] = backtrace;
+	backtrace_to_key[backtrace] = key;
+    }
+    return key;
+}
+
+probe syscall.brk.return {
+    if (pid() != target())
+	next;
+    pointer = @defined($return) ? $return : register("rax");
+    current_break_end = break_end;
+    if (break_start == 0)
+	break_start = break_end = current_break_end = pointer;
+    else
+	break_end = pointer;
+    if (break_end > break_start) {
+	length = break_end - current_break_end;
+	backtrace = sprint_ubacktrace();
+	key = get_unique_id(backtrace);
+	bytes_alloced_in_backtrace[key] += length;
+	break_keys[key] = 1;
+    }
+}
+
+probe syscall.mmap2 {
+    if (pid() != target())
+	next;
+    mmap_length[tid()] = align_page_size(length);
+    //print_ubacktrace_fileline();
+}
+
+probe syscall.mmap2.return {
+    if (pid() != target())
+	next;
+    pointer = @defined($return) ? $return : register("rax");
+    if (pointer != -1) {
+	length = mmap_length[tid()];
+	backtrace = sprint_ubacktrace();
+	key = get_unique_id(backtrace);
+	common_mmap(pointer, length, key);
+    }
+}
+
+function common_mmap(pointer, length, key) {
+    pointer_backtrace_map[pointer] = key;
+    bytes_alloced_in_backtrace[key] += length;
+    pointer_length_map[pointer] = length;
+}
+
+probe syscall.mremap {
+    if (pid() != target())
+	next;
+    mremap_old_pointer[tid()] = old_address;
+    mremap_old_length[tid()] = align_page_size(old_size);
+    mremap_new_length[tid()] = align_page_size(new_size);
+}
+
+probe syscall.mremap.return {
+    if (pid() != target())
+	next;
+    new_pointer = @defined($return) ? $return : register("rax");
+    old_pointer = mremap_old_pointer[tid()];
+    new_length = mremap_new_length[tid()];
+    old_length = mremap_old_length[tid()];
+    old_key = pointer_backtrace_map[old_pointer];
+    if (old_key) {
+	/* FIXME Not adjusting computed memory allocation. */
+	if (old_length != pointer_length_map[old_pointer])
+	    printf("Change in old size argument for mremap %ld - %ld\n",
+		   pointer_length_map[old_pointer], old_length);
+	common_munmap(old_pointer, pointer_length_map[old_pointer]);
+    }
+    if (new_pointer != -1) {
+	backtrace = sprint_ubacktrace();
+	new_key = get_unique_id(backtrace);
+	common_mmap(new_pointer, new_length, new_key);
+    }
+}
+
+function common_munmap(pointer, size) {
+    new_pointer = 0;
+    new_length = 0;
+    length = align_page_size(length);
+    key = pointer_backtrace_map[pointer];
+    /* Attempt to keep track of partial map alignments */
+    if (pointer_length_map[pointer] != length) {
+	/* Move map forward */
+	if (pointer_length_map[pointer]) {
+	    new_pointer = pointer + length;
+	    new_length = pointer_length_map[pointer] - length;
+	}
+	else {
+	    /* Truncate the map */
+	    foreach (map in pointer_length_map) {
+		end = map + pointer_length_map[map];
+		if (pointer >= map && pointer < end) {
+		    if (pointer + length == end) {
+			new_pointer = map;
+			new_length = length;
+		    }
+		    else {
+			/* FIXME Should compute the split 2 maps */
+			printf("Not computing holes in memory maps\n");
+			print_ubacktrace();
+		    }
+		    break;
+		}
+	    }
+	}
+	delete pointer_length_map[pointer];
+	/* Note that backtraces[key] is kept in use, to not need a new
+	 * unique identifier in case it starts allocating from the same
+	 * backtrace, and also keeps logic simpler in case of partial
+	 * unmap. */
+	if ((bytes_alloced_in_backtrace[key] -= length) == 0)
+	    delete bytes_alloced_in_backtrace[key];
+    }
+    if (new_pointer)
+	common_mmap(new_pointer, new_length, key);
+}
+
+probe syscall.munmap {
+    if (pid() != target())
+	next;
+    common_munmap(start, align_page_size(length));
+}
+
+function report() {
+    /* Create temporary sorting map to report largest chunks first */
+    printf("\nReport for %s (%s)\n", process_name, process_arguments);
+    foreach (key in key_to_backtrace) {
+	bytes = bytes_alloced_in_backtrace[key];
+	detailed_report[bytes, key] = 1;
+    }
+    foreach ([bytes-, key] in detailed_report) {
+	printf("== %s %ld bytes:\n%s",
+	       break_keys[key] ? "*" : "",
+	       bytes, key_to_backtrace[key]);
+    }
+    delete detailed_report;
+}
+
+probe signal.send {
+    if (sig_name == "SIGURG" && sig_pid == target())
+	report();
+}
+
+function reset() {
+    delete backtrace_to_key;
+    delete key_to_backtrace;
+    next_unique_id = 0;
+    delete pointer_backtrace_map;
+    delete pointer_length_map;
+    delete bytes_alloced_in_backtrace;
+    delete mmap_length;
+    delete mremap_old_pointer;
+    delete mremap_old_length;
+    delete mremap_new_length;
+    delete break_keys;
+}
+
+probe kprocess.exec {
+    if (pid() != target())
+	next;
+    exec_process_arguments = argstr;
+}
+
+probe kprocess.exec_complete {
+    if (pid() != target())
+	next;
+    if (success) {
+	if (process_name != "") {
+	    report();
+	    reset();
+	}
+	process_name = execname();
+	process_arguments = exec_process_arguments;
+    }
+}
+
+probe end {
+    report();
+    printf("Stap done.\n");
+    reset();
+}
