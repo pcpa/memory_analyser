@@ -140,6 +140,10 @@ global next_unique_id = 0;
 global pointer_backtrace_map;
 /* Map pointer returned by mmap to its size. */
 global pointer_length_map;
+/* Make it a bit easier to check file mappings */
+%( guru_mode != 0 %?
+  global key_to_filename;
+  global mmap_filename %);
 
 global break_start;
 global break_end;
@@ -204,10 +208,60 @@ probe syscall.brk.return {
     }
 }
 
+%( guru_mode != 0 %?
+  function task_file_handle_d_path:string (task:long, fd:long)
+  %{ /* pure */
+      struct task_struct *p = (struct task_struct *)((long)STAP_ARG_task);
+      struct files_struct *files;
+      char *page = NULL;
+      struct file *filp;
+      struct dentry *dentry;
+      struct vfsmount *vfsmnt;
+      char *path = NULL;
+
+      rcu_read_lock();
+      if ((files = kread(&p->files)) &&
+	  // We need GFP_ATOMIC since we're inside a lock so we
+	  // can't sleep.
+	  (page = (char *)__get_free_page(GFP_ATOMIC)) &&
+	  (
+#ifdef STAPCONF_FILES_LOOKUP_FD_RAW
+	   filp = files_lookup_fd_raw(files, STAP_ARG_fd)
+#else
+	   filp = fcheck_files(files, STAP_ARG_fd)
+#endif
+	   )) {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,26)
+	  /* git commit 9d1bc601 */
+	  path = d_path(&filp->f_path, page, PAGE_SIZE);
+#else
+	  dentry = kread(&filp->f_dentry);
+	  vfsmnt = kread(&filp->f_vfsmnt);
+
+	  if (dentry && vfsmnt) {
+	      path = d_path(dentry, vfsmnt, page, PAGE_SIZE);
+	  }
+#endif
+	  if (path && !IS_ERR(path)) {
+	      snprintf(STAP_RETVALUE, MAXSTRINGLEN, "%s", path);
+	  }
+      }
+      CATCH_DEREF_FAULT();
+
+      if (page) free_page((unsigned long)page);
+
+      rcu_read_unlock();
+      %}
+  %: %)
+
 probe syscall.mmap2 {
     if (pid() != target())
 	next;
     mmap_length[tid()] = align_page_size(length);
+    %(guru_mode != 0 %?
+      if (fd >= 0)
+	  mmap_filename[tid()] =
+		task_file_handle_d_path(pid2task(tid()), fd); %)
 }
 
 probe syscall.mmap2.return {
@@ -218,6 +272,12 @@ probe syscall.mmap2.return {
 	length = mmap_length[tid()];
 	backtrace = sprint_ubacktrace();
 	key = get_unique_id(backtrace);
+	%(guru_mode != 0 %?
+	  if (mmap_filename[tid()] != "") {
+	      key_to_filename[key] = mmap_filename[tid()];
+	      delete mmap_filename[tid()];
+	  }
+	  %)
 	common_mmap(pointer, length, key);
     }
 }
@@ -307,13 +367,21 @@ function common_munmap(pointer, size) {
 		common_mmap(tail_pointer, tail_length,
 			    get_unique_id(sprint_ubacktrace()));
 	}
+    }
+    /* Avoid printing too much gargage if attaching to a running process. */
+    if (pointer_length_map[pointer]) {
 	delete pointer_length_map[pointer];
 	/* Note that backtraces[key] is kept in use, to not need a new
 	 * unique identifier in case it starts allocating from the same
 	 * backtrace, and also keeps logic simpler in case of partial
 	 * unmap. */
-	if ((bytes_alloced_in_backtrace[key] -= length) == 0)
+	if ((bytes_alloced_in_backtrace[key] -= length) == 0) {
 	    delete bytes_alloced_in_backtrace[key];
+	    %(guru_mode != 0 %?
+	      if (key_to_filename[key] != "")
+		  delete key_to_filename[key];
+	      %)
+	}
     }
     if (new_pointer)
 	common_mmap(new_pointer, new_length, key);
@@ -333,9 +401,11 @@ function report() {
 	detailed_report[bytes, key] = 1;
     }
     foreach ([bytes-, key] in detailed_report) {
-	printf("== %s %ld bytes:\n%s",
-	       break_keys[key] ? "*" : "",
-	       bytes, key_to_backtrace[key]);
+	printf("== %s %ld bytes:", break_keys[key] ? "*" : "", bytes);
+	%(guru_mode != 0 %?
+	  if (key_to_filename[key] != "")
+	      printf(" (%s)", key_to_filename[key]) %);
+	printf("\n%s", key_to_backtrace[key]);
     }
     delete detailed_report;
 }
@@ -357,6 +427,9 @@ function reset() {
     delete mremap_old_length;
     delete mremap_new_length;
     delete break_keys;
+    %( guru_mode != 0 %?
+      delete mmap_filename;
+      delete key_to_filename %);
     break_start = break_end = 0;
 }
 
