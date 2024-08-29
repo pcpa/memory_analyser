@@ -259,6 +259,8 @@ probe syscall.mremap.return {
 }
 
 function common_munmap(pointer, size) {
+    tail_pointer = 0;
+    tail_length = 0;
     new_pointer = 0;
     new_length = 0;
     length = align_page_size(length);
@@ -267,26 +269,43 @@ function common_munmap(pointer, size) {
     if (pointer_length_map[pointer] != length) {
 	/* Move map forward */
 	if (pointer_length_map[pointer]) {
-	    new_pointer = pointer + length;
-	    new_length = pointer_length_map[pointer] - length;
+	    /* Should never happen but print message about it as it might
+	     * cause undefined behavior. Just assume excess size is ignored.
+	     * Just handle as if the value did match. */
+	    if (length > pointer_length_map[pointer]) {
+		printf("munmap(%p, %ld) with size larger than %ld\n",
+		       pointer, length, pointer_length_map[pointer]);
+		print_ubacktrace();
+	    }
+	    else {
+		new_pointer = pointer + length;
+		new_length = pointer_length_map[pointer] - length;
+	    }
 	}
 	else {
 	    /* Truncate the map */
 	    foreach (map in pointer_length_map) {
 		end = map + pointer_length_map[map];
 		if (pointer >= map && pointer < end) {
-		    if (pointer + length == end) {
-			new_pointer = map;
-			new_length = length;
-		    }
-		    else {
-			/* FIXME Should compute the split 2 maps */
-			printf("Not computing holes in memory maps\n");
+		    new_pointer = map;
+		    new_length = pointer - map;
+		    if (pointer + length != end) {
+			printf("munmap(%p, %ld) creates hole in map\n",
+			       pointer, size);
 			print_ubacktrace();
+			tail_pointer = pointer + length;
+			tail_length = end - tail_pointer;
 		    }
+		    /* Adjust to remove it below, otherwise will
+		     * have multiple interleaving maps information. */
+		    pointer = map;
 		    break;
 		}
 	    }
+	    if (tail_pointer)
+		/* Create mapping at end to fill hole. */
+		common_mmap(tail_pointer, tail_length,
+			    get_unique_id(sprint_ubacktrace()));
 	}
 	delete pointer_length_map[pointer];
 	/* Note that backtraces[key] is kept in use, to not need a new

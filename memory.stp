@@ -614,6 +614,8 @@ probe syscall.munmap.return {
 function common_mmap(pointer, size, kind) {
     size = align_page_size(size);
     code_address = uaddr();
+    if (record_double_free)
+	delete pointer_release_address_in_code[pointer];
     handle_watch(code_address == watch_address,
 		 pointer && pointer == watch_pointer);
     bytes_alloced_in_code_address[code_address] += size;
@@ -712,6 +714,8 @@ function common_munmap(pointer, size, kind) {
     check_signal();
     new_pointer = 0;
     new_size = 0;
+    tail_pointer = 0;
+    tail_size = 0;
 
     /* These usually should only happen in glibc code, possibly due to memory
      * mapped with a direct syscall during binary load, but can also happen
@@ -720,26 +724,42 @@ function common_munmap(pointer, size, kind) {
     if (mmap_sizes[pointer] != size) {
 	/* Move the map forward */
 	if (mmap_sizes[pointer]) {
-	    new_pointer = pointer + size;
-	    new_size = mmap_sizes[pointer] - size;
+	    /* Should never happen but print message about it as it might
+	     * cause undefined behavior. Just assume excess size is ignored.
+	     * Just handle as if the value did match. */
+	    if (size > mmap_sizes[pointer]) {
+		printf("munmap(%p, %ld) with size larger than %ld\n",
+		       pointer, size, mmap_sizes[pointer]);
+		print_ubacktrace();
+	    }
+	    else {
+		new_pointer = pointer + size;
+		new_size = mmap_sizes[pointer] - size;
+	    }
 	}
 	else {
 	    /* Truncate the map */
 	    foreach (map in mmap_sizes) {
 		end = map + mmap_sizes[map];
 		if (pointer >= map && pointer < end) {
-		    if (pointer + size == end) {
-			new_pointer = map;
-			new_size = size;
-		    }
-		    else {
-			/* FIXME Should compute the split 2 maps */
-			printf("Not computing holes in memory maps\n");
+		    new_pointer = map;
+		    new_size = pointer - map;
+		    if (pointer + size != end) {
+			printf("munmap(%p, %ld) creates hole in map\n",
+			       pointer, size);
 			print_ubacktrace();
+			tail_pointer = pointer + size;
+			tail_size = end - tail_pointer;
 		    }
+		    /* Adjust to remove it below, otherwise will
+		     * have multiple interleaving maps information. */
+		    pointer = map;
 		    break;
 		}
 	    }
+	    if (tail_pointer)
+		/* Create mapping at end to fill hole. */
+		common_mmap(tail_pointer, tail_size, kind);
 	}
     }
     if (mmap_sizes[pointer]) {
