@@ -143,7 +143,7 @@ global pointer_length_map;
 /* Make it a bit easier to check file mappings */
 %( guru_mode != 0 %?
   global key_to_filename;
-  global mmap_filename %);
+  global mmap_filename; %)
 
 global break_start;
 global break_end;
