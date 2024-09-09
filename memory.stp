@@ -235,6 +235,18 @@ global mmaps;
 global munmaps;
 global mmap_lengths;
 
+private global _arg1;
+private global _arg2;
+private global _arg3;
+private global _return;
+@define ARG1			%( @defined($arg1) ? $arg1 : register(_arg1) %)
+@define ENTRY_ARG1		%( @defined(@entry($arg1)) ? @entry($arg1) : @entry(register(_arg1)) %)
+@define ARG2			%( @defined($arg2) ? $arg2 : register(_arg2) %)
+@define ENTRY_ARG2		%( @defined(@entry($arg2)) ? @entry($arg2) : @entry(register(_arg2)) %)
+@define ARG3			%( @defined($arg3) ? $arg3 : register(_arg3) %)
+@define ENTRY_ARG3		%( @defined(@entry($arg3)) ? @entry($arg3) : @entry(register(_arg3)) %)
+@define RETURN			%( @defined($return) ? $return : register(_return) %)
+
 %( 1 == 1 /* tcmalloc */ %?
 global tc_news;
 global tc_deletes;
@@ -327,6 +339,27 @@ probe begin {
 	show_invalid = trap_on_invalid || !attached;
     if (record_double_free == -1)
 	record_double_free = verbose > 2 && !attached;
+
+    %( arch == "x86_64" %?
+      _arg1 = "rdi";
+      _arg2 = "rsi";
+      _arg3 = "rdx";
+      _return = "rax"
+      %: %( arch == "arm64" %?
+	   _arg1 = "x0";
+	   _arg2 = "x1";
+	   _arg3 = "x2";
+	   _return = "x0"
+	   %: %( arch == "powerpc" %?
+		_arg1 = "r3";
+		_arg2 = "r4";
+		_arg3 = "r5";
+		_return = "r3"
+		%: error("unsupported architecture")
+		%)
+	   %)
+      %);
+
     printf("Stap ready.\n");
 }
 
@@ -494,10 +527,9 @@ process("/lib64/libc.so.6").function("memalign")
 probe process("/lib64/libc.so.6").function("brk").return {
     if (pid() != target())
 	next;
-    result = @defined($return) ? $return : register("rax");
+    result = @RETURN;
     if (result == 0) {
-	pointer = @defined(@entry($arg1)) ?
-			   @entry($arg1) : @entry(register("rdi"));
+	pointer = @ARG1;
 	handle_watch(uaddr() == watch_address,
 		     pointer && pointer == watch_pointer);
 	if (break_start == 0 || pointer < break_start)
@@ -510,13 +542,12 @@ probe process("/lib64/libc.so.6").function("brk").return {
 probe process("/lib64/libc.so.6").function("sbrk").return {
     if (pid() != target())
 	next;
-    pointer = @defined($return) ? $return : register("rax");
+    pointer = @RETURN;
     if (pointer != -1) {
 	handle_watch(uaddr() == watch_address,
 		     pointer && pointer == watch_pointer);
 	/*
-	increment = @defined(@entry($arg1)) ?
-			     @entry($arg1) : @entry(register("rdi"));
+	increment = @ENTRY_ARG1;
 	 */
 	if (break_start == 0 || pointer < break_start)
 	    break_start = pointer;
@@ -556,7 +587,7 @@ probe syscall.mmap2.return {
     if (ignore_mmap || pid() != target() ||
 	(ignore_mmap_during_alloc && doing_memory_allocation[tid()]))
 	next;
-    pointer = @defined($return) ? $return : register("rax");
+    pointer = @RETURN;
     if (pointer != -1) {
 	if (!mmaps[tid()] && workaround_mmap_mismatch)
 	    common_mmap(pointer, mmap_lengths[tid()], n_syscall);
@@ -641,10 +672,9 @@ probe process("/lib64/libc.so.6").function("mmap").return {
     if (ignore_mmap || pid() != target() ||
 	(ignore_mmap_during_alloc && doing_memory_allocation[tid()]))
 	next;
-    pointer = @defined($return) ? $return : register("rax");
+    pointer = @RETURN;
     if (pointer != -1) {
-	size = @defined(@entry($arg2)) ?
-			@entry($arg2) : @entry(register("rsi"));
+	size = @ENTRY_ARG2;
 	common_mmap(pointer, size, n_mmap);
     }
 }
@@ -700,13 +730,10 @@ probe process("/lib64/libc.so.6").function("mremap").return {
     if (ignore_mmap || pid() != target() ||
 	(ignore_mmap_during_alloc && doing_memory_allocation[tid()]))
 	next;
-    old_pointer = @defined(@entry($arg1)) ?
-			   @entry($arg1) : @entry(register("rdi"));
-    new_pointer = @defined($return) ? $return : register("rax");
-    new_size	= @defined(@entry($arg3)) ?
-			   @entry($arg3) : @entry(register("rdx"));
-    old_size	= @defined(@entry($arg2)) ?
-			   @entry($arg2) : @entry(register("rsi"));
+    old_pointer = @ENTRY_ARG1;
+    new_pointer = @RETURN;
+    new_size	= @ENTRY_ARG3;
+    old_size	= @ENTRY_ARG2;
     common_mremap(new_pointer, old_pointer, new_size, old_size, n_mremap);
 }
 
@@ -791,8 +818,8 @@ probe process("/lib64/libc.so.6").function("munmap") {
     if (ignore_mmap || pid() != target() ||
 	(ignore_mmap_during_alloc && doing_memory_allocation[tid()]))
 	next;
-    pointer = @defined($arg1) ? $arg1 : register("rdi");
-    size = @defined($arg2) ? $arg2 : register("rsi");
+    pointer = @ARG1;
+    size = @ARG2;
     munmaps[tid()] = 1;
     common_munmap(pointer, size, n_mmap);
 }
@@ -830,17 +857,17 @@ process("/lib64/libc.so.6").function("pvalloc").return	/* deprecated */
 {
     if (pid() != target() || news[tid()])
 	next;
-    pointer = @defined($return) ? $return : register("rax");
-    size = @defined(@entry($arg1)) ? @entry($arg1) : @entry(register("rdi"));
+    pointer = @RETURN;
+    size = @ENTRY_ARG1;
     common_malloc(pointer, size, n_malloc);
 }
 
 probe process("/lib64/libc.so.6").function("calloc").return {
     if (pid() != target() || news[tid()])
 	next;
-    pointer = @defined($return) ? $return : register("rax");
-    number  = @defined(@entry($arg1)) ? @entry($arg1) : @entry(register("rdi"));
-    count   = @defined(@entry($arg2)) ? @entry($arg2) : @entry(register("rsi"));
+    pointer = @RETURN;
+    number  = @ENTRY_ARG1;
+    count   = @ENTRY_ARG2;
     size = number * count;
     common_malloc(pointer, size, n_calloc);
 }
@@ -902,11 +929,9 @@ probe process("/lib64/libc.so.6").function("realloc") {
 probe process("/lib64/libc.so.6").function("realloc").return {
     if (pid() != target())
 	next;
-    new_pointer	= @defined($return) ? $return : register("rax");
-    old_pointer = @defined(@entry($arg1)) ?
-			   @entry($arg1) : @entry(register("rdi"));
-    new_size	= @defined(@entry($arg2)) ?
-			   @entry($arg2) : @entry(register("rsi"));
+    new_pointer	= @RETURN;
+    old_pointer = @ENTRY_ARG1;
+    new_size	= @ENTRY_ARG2;
     common_realloc(new_pointer, old_pointer, new_size, n_realloc);
     delete news[tid()];
 }
@@ -923,12 +948,10 @@ probe process("/lib64/libc.so.6").function("reallocarray").return {
 probe process("/lib64/libc.so.6").function("posix_memalign").return {
     if (pid() != target() || news[tid()])
 	next;
-    result = @defined($return) ? $return : register("rax");
+    result = @RETURN;
     if (result == 0) {
-	pointer_to_pointer = @defined(@entry($arg1)) ?
-				      @entry($arg1) : register("rdi");
-	size		   = @defined(@entry($arg3)) ?
-				      @entry($arg3) : register("rdx");
+	pointer_to_pointer = @ENTRY_ARG1;
+	size		   = @ENTRY_ARG3;
 	pointer = user_int64(pointer_to_pointer);
 	common_malloc(pointer, size, n_posix_memalign);
     }
@@ -944,9 +967,8 @@ process("/lib64/libc.so.6").function("memalign").return	/* deprecated */
 {
     if (pid() != target() || news[tid()])
 	next;
-    pointer = @defined($return) ? $return : register("rax");
-    size    = @defined(@entry($arg2)) ?
-		       @entry($arg2) : @entry(register("rsi"));
+    pointer = @RETURN;
+    size    = @ENTRY_ARG2;
     common_malloc(pointer, size, n_aligned_alloc);
 }
 
@@ -984,7 +1006,7 @@ probe process("/lib64/libc.so.6").function("free") {
     if (pid() != target() || deletes[tid()])
 	next;
     check_signal();
-    pointer = @defined($arg1) ? $arg1 : register("rdi");
+    pointer = @ARG1;
     ++doing_memory_allocation[tid()];
     common_free(pointer);
 }
@@ -1036,9 +1058,8 @@ process("/lib64/libstdc++.so.6").function("_Znwm").return
 {
     if (pid() != target())
 	next;
-    pointer = @defined($return) ? $return : register("rax");
-    size    = @defined(@entry($arg1)) ?
-		       @entry($arg1) : @entry(register("rdi"));
+    pointer = @RETURN;
+    size    = @ENTRY_ARG1;
     common_malloc(pointer, size, n_new);
     delete news[tid()];
 }
@@ -1075,7 +1096,7 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv")
 	next;
     check_signal();
     deletes[tid()] = 1;
-    pointer = @defined($arg1) ? $arg1 : register("rdi");
+    pointer = @ARG1;
     common_free(pointer);
     ++doing_memory_allocation[tid()];
 }
@@ -1124,19 +1145,17 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
   {
       if (pid() != target())
 	  next;
-      pointer = @defined($return) ? $return : register("rax");
-      size = @defined(@entry($arg1)) ? @entry($arg1) : @entry(register("rdi"));
+      pointer = @RETURN;
+      size = @ENTRY_ARG1;
       common_malloc(pointer, size, n_je_malloc);
   }
 
   probe process("/lib64/libjemalloc.so.2").function("calloc").return ? {
       if (pid() != target())
 	  next;
-      pointer = @defined($return) ? $return : register("rax");
-      number  = @defined(@entry($arg1)) ?
-			 @entry($arg1) : @entry(register("rdi"));
-      count   = @defined(@entry($arg2)) ?
-			 @entry($arg2) : @entry(register("rsi"));
+      pointer = @RETURN;
+      number  = @ENTRY_ARG1;
+      count   = @ENTRY_ARG2;
       size = number * count;
       common_malloc(pointer, size, n_je_calloc);
   }
@@ -1146,23 +1165,19 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
   process("/lib64/libjemalloc.so.2").function("rallocx").return ? {
       if (pid() != target())
 	  next;
-      new_pointer	= @defined($return) ? $return : register("rax");
-      old_pointer	= @defined(@entry($arg1)) ?
-				   @entry($arg1) : @entry(register("rdi"));
-      new_size		= @defined(@entry($arg2)) ?
-				   @entry($arg2) : @entry(register("rsi"));
+      new_pointer	= @RETURN;
+      old_pointer	= @ENTRY_ARG1;
+      new_size		= @ENTRY_ARG2;
       common_realloc(new_pointer, old_pointer, new_size, n_je_realloc);
   }
 
   probe process("/lib64/libjemalloc.so.2").function("posix_memalign").return ? {
       if (pid() != target())
 	  next;
-      result = @defined($return) ? $return : register("rax");
+      result = @RETURN;
       if (result == 0) {
-	  pointer_to_pointer = @defined(@entry($arg1)) ?
-					@entry($arg1) : register("rdi");
-	  size		   = @defined(@entry($arg3)) ?
-	  @entry($arg3) : register("rdx");
+	  pointer_to_pointer = @ENTRY_ARG1;
+	  size		     = @ENTRY_ARG3;
 	  pointer = user_int64(pointer_to_pointer);
 	  common_malloc(pointer, size, n_je_posix_memalign);
       }
@@ -1176,9 +1191,8 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
   process("/lib64/libjemalloc.so.2").function("aligned_alloc").return ? {
       if (pid() != target())
 	  next;
-      pointer = @defined($return) ? $return : register("rax");
-      size    = @defined(@entry($arg2)) ?
-      @entry($arg2) : @entry(register("rsi"));
+      pointer = @RETURN;
+      size    = @ENTRY_ARG2;
       common_malloc(pointer, size, n_je_aligned_alloc);
   }
 
@@ -1189,7 +1203,7 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
       if (pid() != target())
 	  next;
       check_signal();
-      pointer = @defined($arg1) ? $arg1 : register("rdi");
+      pointer = @ARG1;
       common_free(pointer);
       ++doing_memory_allocation[tid()];
   }
@@ -1224,13 +1238,12 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
   probe process("/lib64/libtcmalloc*.so.4").function("sbrk").return ? {
       if (pid() != target())
 	  next;
-      pointer = @defined($return) ? $return : register("rax");
+      pointer = @RETURN;
       if (pointer != -1) {
 	  handle_watch(uaddr() == watch_address,
 		       pointer && pointer == watch_pointer);
 	  /*
-	    increment = @defined(@entry($arg1)) ?
-				 @entry($arg1) : @entry(register("rdi"));
+	    increment = @ENTRY_ARG1;
 	 */
 	  if (break_start == 0 || pointer < break_start)
 	      break_start = pointer;
@@ -1251,10 +1264,9 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
       if (ignore_mmap || pid() != target() ||
 	  (ignore_mmap_during_alloc && doing_memory_allocation[tid()]))
 	  next;
-      pointer = @defined($return) ? $return : register("rax");
+      pointer = @RETURN;
       if (pointer != -1) {
-	  size = @defined(@entry($arg2)) ?
-			  @entry($arg2) : @entry(register("rsi"));
+	  size = @ENTRY_ARG2;
 	  common_mmap(pointer, size, n_tc_mmap);
       }
   }
@@ -1264,13 +1276,10 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
       if (ignore_mmap || pid() != target() ||
 	  (ignore_mmap_during_alloc && doing_memory_allocation[tid()]))
 	  next;
-      old_pointer = @defined(@entry($arg1)) ?
-			   @entry($arg1) : @entry(register("rdi"));
-      new_pointer = @defined($return) ? $return : register("rax");
-      new_size	  = @defined(@entry($arg3)) ?
-			     @entry($arg3) : @entry(register("rdx"));
-      old_size	  = @defined(@entry($arg2)) ?
-			     @entry($arg2) : @entry(register("rsi"));
+      old_pointer = @ENTRY_ARG1;
+      new_pointer = @RETURN;
+      new_size	  = @ENTRY_ARG3;
+      old_size	  = @ENTRY_ARG2;
       common_mremap(new_pointer, old_pointer, new_size, old_size, n_tc_mremap);
   }
 
@@ -1285,8 +1294,8 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
       if (ignore_mmap || pid() != target() ||
 	  (ignore_mmap_during_alloc && doing_memory_allocation[tid()]))
 	  next;
-      pointer = @defined($arg1) ? $arg1 : register("rdi");
-      size = @defined($arg2) ? $arg2 : register("rsi");
+      pointer = @ARG1;
+      size    = @ARG2;
       munmaps[tid()] = 1;
       common_munmap(pointer, size, n_tc_mmap);
   }
@@ -1299,8 +1308,8 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
       if (pid() != target())
 	  next;
       if (!tc_news[tid()]) {
-	  pointer = @defined($return) ? $return : register("rax");
-	  size = @defined(@entry($arg1)) ? @entry($arg1) : @entry(register("rdi"));
+	  pointer = @RETURN;
+	  size = @ENTRY_ARG1;
 	  common_malloc(pointer, size, n_tc_malloc);
       }
       else
@@ -1312,11 +1321,9 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
   probe process("/lib64/libtcmalloc*.so.4").function("calloc").return ? {
       if (pid() != target())
 	  next;
-      pointer = @defined($return) ? $return : register("rax");
-      number  = @defined(@entry($arg1)) ?
-			 @entry($arg1) : @entry(register("rdi"));
-      count   = @defined(@entry($arg2)) ?
-			 @entry($arg2) : @entry(register("rsi"));
+      pointer = @RETURN;
+      number  = @ENTRY_ARG1;
+      count   = @ENTRY_ARG2;
       size = number * count;
       common_malloc(pointer, size, n_tc_calloc);
   }
@@ -1324,23 +1331,19 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
   probe process("/lib64/libtcmalloc*.so.4").function("realloc").return ? {
       if (pid() != target())
 	  next;
-      new_pointer	= @defined($return) ? $return : register("rax");
-      old_pointer	= @defined(@entry($arg1)) ?
-				   @entry($arg1) : @entry(register("rdi"));
-      new_size		= @defined(@entry($arg2)) ?
-				   @entry($arg2) : @entry(register("rsi"));
+      new_pointer	= @RETURN;
+      old_pointer	= @ENTRY_ARG1;
+      new_size		= @ENTRY_ARG2;
       common_realloc(new_pointer, old_pointer, new_size, n_tc_realloc);
   }
 
   probe process("/lib64/libtcmalloc*.so.4").function("posix_memalign").return ? {
       if (pid() != target())
 	  next;
-      result = @defined($return) ? $return : register("rax");
+      result = @RETURN;
       if (result == 0) {
-	  pointer_to_pointer = @defined(@entry($arg1)) ?
-					@entry($arg1) : register("rdi");
-	  size		   = @defined(@entry($arg3)) ?
-	  @entry($arg3) : register("rdx");
+	  pointer_to_pointer = @ENTRY_ARG1;
+	  size		     = @ENTRY_ARG3;
 	  pointer = user_int64(pointer_to_pointer);
 	  common_malloc(pointer, size, n_tc_posix_memalign);
       }
@@ -1355,9 +1358,8 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
   process("/lib64/libtcmalloc*.so.4").function("memalign").return ? {
       if (pid() != target())
 	  next;
-      pointer = @defined($return) ? $return : register("rax");
-      size    = @defined(@entry($arg2)) ?
-      @entry($arg2) : @entry(register("rsi"));
+      pointer = @RETURN;
+      size    = @ENTRY_ARG2;
       common_malloc(pointer, size, n_tc_aligned_alloc);
   }
 
@@ -1367,7 +1369,7 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
       ++doing_memory_allocation[tid()]
       if (!tc_deletes[tid()]) {
 	  check_signal();
-	  pointer = @defined($arg1) ? $arg1 : register("rdi");
+	  pointer = @ARG1;
 	  common_free(pointer);
       }
   }
@@ -1421,8 +1423,8 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
       if (pid() != target())
 	  next;
       if (--tc_news[tid()] == 0) {
-	  pointer = @defined($return) ? $return : register("rax");
-	  size = @defined(@entry($arg1)) ? @entry($arg1) : @entry(register("rdi"));
+	  pointer = @RETURN;
+	  size    = @ENTRY_ARG1;
 	  common_malloc(pointer, size, n_tc_new);
       }
   }
@@ -1483,7 +1485,7 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
       if (pid() != target())
 	  next;
       if (--tc_deletes[tid()] == 0) {
-	  pointer = @defined(@entry($arg1)) ? @entry($arg1) : @entry(register("rdi"));
+	  pointer = @ENTRY_ARG1;
 	  common_free(pointer);
       }
       --doing_memory_allocation[tid()];
@@ -1515,19 +1517,17 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
   {
       if (pid() != target())
 	  next;
-      pointer = @defined($return) ? $return : register("rax");
-      size = @defined(@entry($arg1)) ? @entry($arg1) : @entry(register("rdi"));
+      pointer = @RETURN;
+      size = @ENTRY_ARG1;
       common_malloc(pointer, size, n_mi_malloc);
   }
 
   probe process("/lib64/libmimalloc*.so.2").function("calloc").return ? {
       if (pid() != target())
 	  next;
-      pointer = @defined($return) ? $return : register("rax");
-      number  = @defined(@entry($arg1)) ?
-			 @entry($arg1) : @entry(register("rdi"));
-      count   = @defined(@entry($arg2)) ?
-			 @entry($arg2) : @entry(register("rsi"));
+      pointer = @RETURN;
+      number  = @ENTRY_ARG1;
+      count   = @ENTRY_ARG2;
       size = number * count;
       common_malloc(pointer, size, n_mi_calloc);
   }
@@ -1537,24 +1537,19 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
   process("/lib64/libmimalloc*.so.2").function("reallocf").return ? {
       if (pid() != target())
 	  next;
-      new_pointer	= @defined($return) ? $return : register("rax");
-      old_pointer	= @defined(@entry($arg1)) ?
-				   @entry($arg1) : @entry(register("rdi"));
-      new_size		= @defined(@entry($arg2)) ?
-				   @entry($arg2) : @entry(register("rsi"));
+      new_pointer	= @RETURN;
+      old_pointer	= @ENTRY_ARG1;
+      new_size		= @ENTRY_ARG2;
       common_realloc(new_pointer, old_pointer, new_size, n_mi_realloc);
   }
 
   probe process("/lib64/libmimalloc*.so.2").function("reallocarray").return ? {
       if (pid() != target())
 	  next;
-      new_pointer	= @defined($return) ? $return : register("rax");
-      old_pointer	= @defined(@entry($arg1)) ?
-				   @entry($arg1) : @entry(register("rdi"));
-      nmemb		= @defined(@entry($arg2)) ?
-				   @entry($arg2) : @entry(register("rsi"));
-      size		= @defined(@entry($arg3)) ?
-				   @entry($arg3) : @entry(register("rdx"));
+      new_pointer	= @RETURN;
+      old_pointer	= @ENTRY_ARG1;
+      nmemb		= @ENTRY_ARG2;
+      size		= @ENTRY_ARG3;
       /* ignore overflow as it should have been handled in error path */
       new_size = nmemb * size;
       common_realloc(new_pointer, old_pointer, new_size, n_mi_reallocarray);
@@ -1563,12 +1558,10 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
   probe process("/lib64/libmimalloc*.so.2").function("posix_memalign").return ? {
       if (pid() != target())
 	  next;
-      result = @defined($return) ? $return : register("rax");
+      result = @RETURN;
       if (result == 0) {
-	  pointer_to_pointer = @defined(@entry($arg1)) ?
-					@entry($arg1) : register("rdi");
-	  size		   = @defined(@entry($arg3)) ?
-	  @entry($arg3) : register("rdx");
+	  pointer_to_pointer = @ENTRY_ARG1;
+	  size		     = @ENTRY_ARG3;
 	  pointer = user_int64(pointer_to_pointer);
 	  common_malloc(pointer, size, n_mi_posix_memalign);
       }
@@ -1583,9 +1576,8 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
   process("/lib64/libmimalloc*.so.2").function("memalign").return ? {
       if (pid() != target())
 	  next;
-      pointer = @defined($return) ? $return : register("rax");
-      size    = @defined(@entry($arg2)) ?
-      @entry($arg2) : @entry(register("rsi"));
+      pointer = @RETURN;
+      size    = @ENTRY_ARG2;
       common_malloc(pointer, size, n_mi_aligned_alloc);
   }
 
@@ -1594,7 +1586,7 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
   process("/lib64/libmimalloc*.so.2").function("strndup").return ? {
     if (pid() != target())
 	next;
-    pointer = @defined($return) ? $return : register("rax");
+    pointer = @RETURN;
     if (pointer) {
 	str = user_string(pointer);
 	size = strlen(str) + 1;
@@ -1612,7 +1604,7 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
       ++doing_memory_allocation[tid()]
       if (!mi_deletes[tid()]) {
 	  check_signal();
-	  pointer = @defined($arg1) ? $arg1 : register("rdi");
+	  pointer = @ARG1;
 	  common_free(pointer);
       }
   }
@@ -1663,8 +1655,8 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
   {
       if (pid() != target())
 	  next;
-      pointer = @defined($return) ? $return : register("rax");
-      size = @defined(@entry($arg1)) ? @entry($arg1) : @entry(register("rdi"));
+      pointer = @RETURN;
+      size = @ENTRY_ARG1;
       common_malloc(pointer, size, n_mi_new);
   }
 
@@ -1724,7 +1716,7 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
       if (pid() != target())
 	  next;
       if (--mi_deletes[tid()] == 0) {
-	  pointer = @defined(@entry($arg1)) ? @entry($arg1) : @entry(register("rdi"));
+	  pointer = @ENTRY_ARG1;
 	  common_free(pointer);
       }
       --doing_memory_allocation[tid()];

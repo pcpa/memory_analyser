@@ -171,7 +171,20 @@ global process_arguments, exec_process_arguments;
 
 global detailed_report;
 
+private global _return;
+@define RETURN		%( @defined($return) ? $return : register(_return) %)
+
 probe begin {
+    %( arch == "x86_64" %?
+      _return = "rax"
+      %: %( arch == "arm64" %?
+	   _return = "x0"
+	   %: %( arch == "powerpc" %?
+		_return = "r3"
+		%: error("unsupported architecture")
+		%)
+	   %)
+      %);
     printf("Stap ready.\n");
 }
 
@@ -193,7 +206,7 @@ function get_unique_id:long(backtrace:string) {
 probe syscall.brk.return {
     if (pid() != target())
 	next;
-    pointer = @defined($return) ? $return : register("rax");
+    pointer = @RETURN;
     current_break_end = break_end;
     if (break_start == 0)
 	break_start = break_end = current_break_end = pointer;
@@ -267,7 +280,7 @@ probe syscall.mmap2 {
 probe syscall.mmap2.return {
     if (pid() != target())
 	next;
-    pointer = @defined($return) ? $return : register("rax");
+    pointer = @RETURN;
     if (pointer != -1) {
 	length = mmap_length[tid()];
 	backtrace = sprint_ubacktrace();
@@ -299,7 +312,7 @@ probe syscall.mremap {
 probe syscall.mremap.return {
     if (pid() != target())
 	next;
-    new_pointer = @defined($return) ? $return : register("rax");
+    new_pointer = @RETURN;
     old_pointer = mremap_old_pointer[tid()];
     new_length = mremap_new_length[tid()];
     old_length = mremap_old_length[tid()];
