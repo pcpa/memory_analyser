@@ -1,0 +1,1178 @@
+#!/usr/bin/stap
+
+/* Sample usage:
+
+$ stap pthread.stp -DMAXMAPENTRIES=65536 -Gverbose=1 -c 'java -jar /path/to/sample.jar'
+Stap ready.
+...
+Report for java ("/usr/bin/java", ["java", "-jar", ...]
+tid to pthread
+    691209 0x7f30118006c0 
+    691210 0x7f30033ff6c0 
+    691211 0x7f3001a256c0 GC Thread#0
+    691212 0x7f30019246c0 G1 Main Marker
+    691213 0x7f30018236c0 G1 Conc#0
+    691214 0x7f3000a156c0 G1 Refine#0
+    691215 0x7f30009146c0 G1 Service
+    691216 0x7f30006f66c0 VM Periodic Tas
+    691217 0x7f300052f6c0 VM Thread
+    691218 0x7f300042e6c0 Reference Handl
+    691219 0x7f300032e6c0 Finalizer
+    691220 0x7f300022e6c0 Signal Dispatch
+    691221 0x7f300012e6c0 Service Thread
+    691222 0x7f2ffbfff6c0 Monitor Deflati
+    691223 0x7f2ff9fff6c0 C2 CompilerThre
+    691224 0x7f2ff9eff6c0 C1 CompilerThre
+    691225 0x7f2ff9d2e6c0 Notification Th
+    691226 0x7f2ff9c2e6c0 Common-Cleaner
+    691227 0x7f2ff9b2e6c0 C1 CompilerThre
+    691228 0x7f2ff9a2e6c0 Sync Timer Thre
+    691229 0x7f2ff992e6c0 XToolkt-Shutdow
+    691230 0x7f2ff982e6c0 Java2D Disposer
+    691231 0x7f2ff992e6c0 XToolkt-Shutdow
+    691232 0x7f2ff982e6c0 Java2D Disposer
+    691233 0x7f2ff982e6c0 Java2D Disposer
+    691234 0x7f2ff95c26c0 AWT-XAWT
+    691235 0x7f2ff94c26c0 AWT-Shutdown
+    691236 0x7f2ff93c26c0 Timer-0
+    691237 0x7f2ff93c26c0 Timer-0
+    691238 0x7f2ff982e6c0 Java2D Disposer
+    691239 0x7f2ff95c26c0 AWT-XAWT
+    691240 0x7f2ff94c26c0 AWT-Shutdown
+    691241 0x7f2ff8dff6c0 AWT-EventQueue-
+    691242 0x7f2ff8cff6c0 Image Fetcher 3
+    691243 0x7f2ff8bff6c0 Logging-Cleaner
+    691245 0x7f2ff8cff6c0 Image Fetcher 3
+    691248 0x7f2ff8aff6c0 GC Thread#1
+    691249 0x7f2ff86fd6c0 GC Thread#2
+    691250 0x7f2ff85026c0 GC Thread#3
+    691251 0x7f2ff84016c0 GC Thread#4
+    691252 0x7f2ff83006c0 GC Thread#5
+    691253 0x7f2ff81ff6c0 GC Thread#6
+    691254 0x7f2ff3fff6c0 GC Thread#7
+    691255 0x7f2fdc1ff6c0 GC Thread#8
+    691256 0x7f2fc8bff6c0 GC Thread#9
+    691257 0x7f2fc8afe6c0 GC Thread#10
+    691258 0x7f2fc89fd6c0 GC Thread#11
+    691259 0x7f2fc88fc6c0 GC Thread#12
+    691260 0x7f2fc87fb6c0 G1 Conc#1
+    691261 0x7f2fc86fa6c0 G1 Conc#2
+    691262 0x7f2ff9a2e6c0 Sync Timer Thre
+    691263 0x7f2ff992e6c0 XToolkt-Shutdow
+    691264 0x7f2ff8bff6c0 Logging-Cleaner
+    691265 0x7f30119386c0 pool-1-thread-1
+initialized mutex 0x7f2ff4155e28 locked for 8 secs, 462 msecs and 462604 usecs by tid 691219
+initialized mutex 0x7f3013171d28 locked for 8 secs, 460 msecs and 460669 usecs by tid 691222
+initialized mutex 0x7f2f10111f28 locked for 1 sec, 816 msecs and 816427 usecs by tid 691245
+initialized mutex 0x7f2f100ba328 locked for 248656 usecs by tid 691240
+Stap done.
+ */
+
+/* -Gtrap_on_all_errors=1 to raise SIGTRAP if any non zero state is returned */
+global trap_on_all_errors = 0;
+/* -Gtrap_on_XYZ=1 to raise SIGTRAP if related errno is returned; this is a
+ * way to globally ignore some errors */
+global trap_on_ownerdead = -1;
+global trap_on_timedout = -1;
+global trap_on_busy = -1;
+global trap_on_again = -1;
+/* These are for the common/expected cases, of pthread_*_trylock instantly
+ * returning when some other thread has the lock, or a lock attempt with
+ * a timer that times out. */
+global trap_on_expected_busy = 0;
+global trap_on_expected_timedout = 0;
+
+global verbose = 0;
+
+private global tid_to_thread;
+private global thread_to_tid;
+private global thread_name;
+private global mutex_lock;
+private global mutex_lock_entry;
+private global mutex_lock_entry_timer;
+private global mutex_consistent;
+private global mutex_prioceiling;
+private global mutex_init;
+
+private global conditions;
+private global mutex_wait;
+private global cond_wait;
+private global cond_wait_timer;
+private global cond_init;
+
+private global rwlock_init;
+private global rdlock_entry;
+private global rdlock_entry_timer;
+private global rdlocks;
+private global wrlock_entry;
+private global wrlock_entry_timer;
+private global wrlocks;
+
+private global spin_init;
+private global spin_entry;
+private global spinlocks;
+
+global process_name = "";
+global process_arguments, exec_process_arguments;
+
+private global details;
+
+@define	EPERM			%(   1 %)
+@define EAGAIN			%(  11 %)
+@define	EBUSY			%(  16 %)
+@define EINVAL			%(  22 %)
+@define	EDEADLK			%(  35 %)
+@define EOPNOTSUPP		%(  95 %)
+@define	ETIMEDOUT		%( 110 %)
+@define	EOWNERDEAD		%( 130 %)
+@define	ENOTRECOVERABLE		%( 131 %)
+
+private global _arg1;
+private global _arg2;
+private global _arg3;
+private global _return;
+@define ARG1			%( @defined($arg1) ? $arg1 : register(_arg1) %)
+@define ENTRY_ARG1		%( @defined(@entry($arg1)) ? @entry($arg1) : @entry(register(_arg1)) %)
+@define ARG2			%( @defined($arg2) ? $arg2 : register(_arg2) %)
+@define ENTRY_ARG2		%( @defined(@entry($arg2)) ? @entry($arg2) : @entry(register(_arg2)) %)
+@define ARG3			%( @defined($arg3) ? $arg3 : register(_arg3) %)
+@define ENTRY_ARG3		%( @defined(@entry($arg3)) ? @entry($arg3) : @entry(register(_arg3)) %)
+@define RETURN			%( @defined($return) ? $return : register(_return) %)
+
+probe begin {
+    /* No setting to "only" trap on specific error */
+    if (trap_on_ownerdead == -1)
+	trap_on_ownerdead = trap_on_all_errors;
+    if (trap_on_timedout == -1)
+	trap_on_timedout = trap_on_all_errors;
+    if (trap_on_busy == -1)
+	trap_on_busy = trap_on_all_errors;
+    if (trap_on_again == -1)
+	trap_on_again = trap_on_all_errors;
+    %( arch == "x86_64" %?
+      _arg1 = "rdi";
+      _arg2 = "rsi";
+      _arg3 = "rdx";
+      _return = "rax"
+      %: %( arch == "arm64" %?
+	   _arg1 = "x0";
+	   _arg2 = "x1";
+	   _arg3 = "x2";
+	   _return = "x0"
+	   %: %( arch == "powerpc" %?
+		_arg1 = "r3";
+		_arg2 = "r4";
+		_arg3 = "r5";
+		_return = "r3"
+		%: error("unsupported architecture")
+		%)
+	   %)
+      %);
+    printf("Stap ready.\n");
+}
+
+function report_error(where:string, errno:long) {
+    if ((errno == @EOWNERDEAD && !trap_on_ownerdead) ||
+	(errno == @ETIMEDOUT && !trap_on_timedout) ||
+	(errno == @EBUSY && !trap_on_busy) ||
+	(errno == @EAGAIN && !trap_on_again) ||
+	!errno || !trap_on_all_errors)
+	return;
+    printf("%s error: %s\n", where, errno_str(errno));
+    print_ubacktrace();
+    %(guru_mode != 0 %?
+      raise(%{ SIGTRAP %}) %: printf("generating SIGTRAP needs guru mode\n")
+	  %);
+}
+
+probe
+process("/lib64/libc.so.6").function("pthread_create").return !,
+process("/lib64/libc.so.6").function("__pthread_create").return {
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    if (result == 0) {
+	//thread	= @ENTRY_ARG1;
+	/*
+	attr	= @ENTRY_ARG2;
+	routine	= @ENTRY_ARG3;
+	arg	= @ENTRY_ARG4;
+	 */
+	/*
+	struct pthread {
+	    union {
+	        tcbhead_t header;		sizeof(tcbhead_t) = 704
+	        void *__padding[24];
+	    };
+	    list_t list;			sizeof(list_t) = 16
+	    pid_t tid;
+	    ...
+	 }
+	 */
+	 /* This looks too fragile */
+	/*
+	pthread = user_int64(thread);
+	tid = user_int32(pthread + 720);
+	tid_to_thread[tid] = thread;
+	*/
+    }
+    else
+	report_error(ppfunc(), result);
+}
+/* Use "mark" instead of too fragile offset computation as example above. */
+probe
+process("/lib64/libc.so.6").mark("pthread_start") {
+    if (pid() != target())
+	next;
+    thread	= $arg1;
+    /*
+    routine	= $arg2;
+    arg		= $arg3;
+     */
+    tid_to_thread[tid()] = thread;
+    thread_to_tid[thread] = tid();
+}
+
+probe
+process("/lib64/libc.so.6").function("pthread_setname_np").return !,
+process("/lib64/libc.so.6").function("__pthread_setname_np").return {
+    if (pid() != target())
+	next;
+    result = @RETURN;
+    if (result == 0) {
+	thread	= @ENTRY_ARG1;
+	name	= @ENTRY_ARG2;
+	thread_name[thread] = user_string(name);
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
+process("/lib64/libc.so.6").function("pthread_cancel").return !,
+process("/lib64/libc.so.6").function("__pthread_cancel").return {
+    if (pid() != target())
+	next;
+    result = @RETURN;
+    if (result == 0) {
+	// thread = @ENTRY_ARG1;
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+/*
+probe
+process("/lib64/libc.so.6").function("pthread_testcancel") !,
+process("/lib64/libc.so.6").function("__pthread_testcancel") {
+    if (pid() != target())
+	next;
+}
+ */
+
+probe
+process("/lib64/libc.so.6").function("pthread_detach").return !,
+process("/lib64/libc.so.6").function("__pthread_detach").return {
+    if (pid() != target())
+	next;
+    result = @RETURN;
+    if (result == 0) {
+	// thread = @ENTRY_ARG1;
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
+process("/lib64/libc.so.6").function("pthread_exit") !,
+process("/lib64/libc.so.6").function("__pthread_exit") {
+    if (pid() != target())
+	next;
+    thread = tid_to_thread[tid()];
+    delete tid_to_thread[tid()];
+    delete thread_to_tid[thread];
+    delete thread_name[thread];
+}
+
+probe
+process("/lib64/libc.so.6").function("pthread_join").return !,
+process("/lib64/libc.so.6").function("__pthread_join").return {
+    if (pid() != target())
+	next;
+    result = @RETURN;
+    if (result == 0) {
+	thread = @ENTRY_ARG1;
+	tid = thread_to_tid[thread];
+	delete tid_to_thread[tid];
+	delete thread_to_tid[thread];
+	delete thread_name[thread];
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
+process("/lib64/libc.so.6").function("pthread_kill").return !,
+process("/lib64/libc.so.6").function("__pthread_kill").return {
+    if (pid() != target())
+	next;
+    result = @RETURN;
+    if (result == 0) {
+	// thread = @ENTRY_ARG1;
+	// signal = @ENTRY_ARG2;
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
+process("/lib64/libc.so.6").function("pthread_mutex_init").return !,
+process("/lib64/libc.so.6").function("__pthread_mutex_init").return {
+    if (pid() != target())
+	next;
+    result = @RETURN;
+    if (result == 0) {
+	mutex = @ENTRY_ARG1;
+	/*
+	attr  = @ENTRY_ARG2;
+	 */
+	mutex_init[mutex] = gettimeofday_us();
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
+process("/lib64/libc.so.6").function("pthread_mutex_trylock").return !,
+process("/lib64/libc.so.6").function("__pthread_mutex_trylock").return {
+    if (pid() != target())
+	next;
+    result = @RETURN;
+    if (result == 0) {
+	mutex = @ENTRY_ARG1;
+	mutex_lock_entry[tid(), mutex] = gettimeofday_us();
+    }
+    /* EAGAIN is returned if the counter wrapers around */
+    else {
+	if (!trap_on_expected_busy || result != @EBUSY)
+	    report_error(ppfunc(), result);
+	mutex_lock_entry[tid(), mutex] = -1;
+    }
+}
+
+probe
+process("/lib64/libc.so.6").function("pthread_mutex_timedlock") !,
+process("/lib64/libc.so.6").function("__pthread_mutex_timedlock") {
+    if (pid() != target())
+	next;
+    mutex = @ARG1;
+    tmout = @ARG2;
+    mutex_lock_entry[tid(), mutex] = gettimeofday_us();
+    mutex_lock_entry_timer[tid(), mutex] = tmout;
+}
+
+probe
+process("/lib64/libc.so.6").function("pthread_mutex_timedlock").return !,
+process("/lib64/libc.so.6").function("__pthread_mutex_timedlock").return {
+    if (pid() != target())
+	next;
+    result = @RETURN;
+    mutex = @ENTRY_ARG1;
+    if (result == 0) {
+	mutex_lock_entry[tid(), mutex] = gettimeofday_us();
+	mutex_lock_entry_timer[tid(), mutex] = 0;
+    }
+    /* EAGAIN is returned if the counter wrapers around */
+    else {
+	if (!trap_on_expected_timedout || result != @ETIMEDOUT)
+	    report_error(ppfunc(), result);
+	mutex_lock_entry[tid(), mutex] = -1;
+    }
+}
+
+probe
+process("/lib64/libc.so.6").function("pthread_mutex_lock") !,
+process("/lib64/libc.so.6").function("__pthread_mutex_lock") {
+    if (pid() != target())
+	next;
+    mutex = @ARG1;
+    mutex_lock_entry[tid(), mutex] = gettimeofday_us();
+}
+
+probe
+process("/lib64/libc.so.6").function("pthread_mutex_lock").return !,
+process("/lib64/libc.so.6").function("__pthread_mutex_lock").return {
+    if (pid() != target())
+	next;
+    result = @RETURN;
+    mutex = @ENTRY_ARG1;
+    if (result == 0) {
+	mutex_lock[mutex] = tid();
+	mutex_lock_entry[tid(), mutex] = gettimeofday_us();
+    }
+    else {
+	/* Use -1 to flag the inconsistent state */
+	if (result == @EOWNERDEAD)
+	    mutex_consistent[mutex] = -1;
+	report_error(ppfunc(), result);
+	mutex_lock_entry[tid(), mutex] = -1;
+    }
+}
+
+probe
+process("/lib64/libc.so.6").function("pthread_mutex_consistent").return !,
+process("/lib64/libc.so.6").function("__pthread_mutex_consistent").return {
+    if (pid() != target())
+	next;
+    result = @RETURN;
+    mutex = @ENTRY_ARG1;
+    if (result)
+	report_error(ppfunc(), result);
+    /* Record it is now consistent. Error state is -1. */
+    mutex_consistent[mutex] = gettimeofday_us();
+}
+
+
+probe
+process("/lib64/libc.so.6").function("pthread_mutex_getprioceiling").return !,
+process("/lib64/libc.so.6").function("__pthread_mutex_getprioceiling").return {
+    if (pid() != target())
+	next;
+    result = @RETURN;
+    mutex = @ENTRY_ARG1;
+    ceiling = @ENTRY_ARG2;
+    if (result)
+	report_error(ppfunc(), result);
+    else if (!mutex_prioceiling[mutex])
+	mutex_prioceiling[mutex] = user_int32(ceiling);
+}
+
+probe
+process("/lib64/libc.so.6").function("pthread_mutex_setprioceiling").return !,
+process("/lib64/libc.so.6").function("__pthread_mutex_setprioceiling").return {
+    if (pid() != target())
+	next;
+    result = @RETURN;
+    mutex = @ENTRY_ARG1;
+    new_ceiling = @ENTRY_ARG2;
+    /*
+    old_ceiling = @ENTRY_ARG3;
+     */
+    if (result)
+	report_error(ppfunc(), result);
+    else
+	mutex_prioceiling[mutex] = new_ceiling;
+}
+
+probe
+process("/lib64/libc.so.6").function("pthread_mutex_unlock").return !,
+process("/lib64/libc.so.6").function("__pthread_mutex_unlock").return {
+    if (pid() != target())
+	next;
+    result = @RETURN;
+    mutex = @ENTRY_ARG1;
+    if (result)
+	report_error(ppfunc(), result);
+    else {
+	delete mutex_lock[mutex];
+	delete mutex_lock_entry[tid(), mutex];
+	delete mutex_lock_entry_timer[tid(), mutex];
+    }
+}
+
+probe
+process("/lib64/libc.so.6").function("pthread_mutex_destroy").return !,
+process("/lib64/libc.so.6").function("__pthread_mutex_destroy").return {
+    if (pid() != target())
+	next;
+    result = @RETURN;
+    if (result == 0) {
+	mutex = @ENTRY_ARG1;
+	/* Use -1 to known it was destroyed */
+	mutex_init[mutex] = -1;
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
+process("/lib64/libc.so.6").function("pthread_cond_init").return !,
+process("/lib64/libc.so.6").function("__pthread_cond_init").return {
+    if (pid() != target())
+	next;
+    result = @RETURN;
+    /*
+    attr = @ENTRY_ARG2;
+     */
+    if (result == 0) {
+	cond = @ENTRY_ARG1;
+	cond_init[cond] = gettimeofday_us();
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
+process("/lib64/libc.so.6").function("pthread_cond_broadcast").return !,
+process("/lib64/libc.so.6").function("__pthread_cond_broadcast").return {
+    if (pid() != target())
+	next;
+    result = @RETURN;
+    if (result == 0) {
+	/*
+	cond = @ENTRY_ARG1;
+	 */
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
+process("/lib64/libc.so.6").function("pthread_cond_signal").return !,
+process("/lib64/libc.so.6").function("__pthread_cond_signal").return {
+    if (pid() != target())
+	next;
+    result = @RETURN;
+    if (result == 0) {
+	/*
+	cond = @ENTRY_ARG1;
+	 */
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
+process("/lib64/libc.so.6").function("pthread_cond_wait") !,
+process("/lib64/libc.so.6").function("___pthread_cond_wait")
+{
+    if (pid() != target())
+	next;
+    cond  = @ARG1;
+    mutex = @ARG2;
+    cond_wait[tid(), cond] = gettimeofday_us();
+    mutex_wait[tid(), cond] = mutex;
+}
+
+probe
+process("/lib64/libc.so.6").function("pthread_cond_wait").return !,
+process("/lib64/libc.so.6").function("___pthread_cond_wait").return {
+    if (pid() != target())
+	next;
+    result = @RETURN;
+    cond  = @ENTRY_ARG1;
+    /*
+    mutex = @ENTRY_ARG2;
+     */
+    if (result)
+	report_error(ppfunc(), result);
+    cond_wait[tid(), cond] = 0;
+    mutex_wait[tid(), cond] = 0;
+}
+
+probe
+process("/lib64/libc.so.6").function("pthread_cond_timedwait") !,
+process("/lib64/libc.so.6").function("__pthread_cond_timedwait") {
+    if (pid() != target())
+	next;
+    cond  = @ARG1;
+    mutex = @ARG2;
+    tmout = @ARG3;
+    cond_wait[tid(), cond] = gettimeofday_us();
+    mutex_wait[tid(), cond] = mutex;
+    cond_wait_timer[tid(), cond] = tmout;
+}
+
+probe
+process("/lib64/libc.so.6").function("pthread_cond_timedwait").return !,
+process("/lib64/libc.so.6").function("__pthread_cond_timedwait").return {
+    if (pid() != target())
+	next;
+    result = @RETURN;
+    cond  = @ENTRY_ARG1;
+    /*
+    mutex = @ENTRY_ARG2;
+     */
+    if (result && (!trap_on_expected_timedout || result != @ETIMEDOUT))
+	report_error(ppfunc(), result);
+    cond_wait[tid(), cond] = 0;
+    mutex_wait[tid(), cond] = 0;
+    cond_wait_timer[tid(), cond] = 0;
+}
+
+probe
+process("/lib64/libc.so.6").function("pthread_cond_destroy").return !,
+process("/lib64/libc.so.6").function("__pthread_cond_destroy").return {
+    if (pid() != target())
+	next;
+    result = @RETURN;
+    if (result == 0) {
+	cond = @ENTRY_ARG1;
+	/* Use -1 to known it was destroyed */
+	cond_init[cond] = -1;
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+
+probe
+process("/lib64/libc.so.6").function("pthread_rwlock_init").return !,
+process("/lib64/libc.so.6").function("__pthread_rwlock_init").return {
+    if (pid() != target())
+	next;
+    result = @RETURN;
+    if (result == 0) {
+	rwlock	= @ENTRY_ARG1;
+	/*
+	attr	= @ENTRY_ARG2;
+	 */
+	rwlock_init[rwlock] = gettimeofday_us();
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
+process("/lib64/libc.so.6").function("pthread_rwlock_rdlock") !,
+process("/lib64/libc.so.6").function("__pthread_rwlock_rdlock") {
+    if (pid() != target())
+	next;
+    rwlock	= @ARG1;
+    rdlock_entry[tid(), rwlock] = gettimeofday_us();
+}
+
+probe
+process("/lib64/libc.so.6").function("pthread_rwlock_rdlock").return !,
+process("/lib64/libc.so.6").function("__pthread_rwlock_rdlock").return {
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    rwlock	= @ENTRY_ARG1;
+    if (result == 0) {
+	rdlocks[rwlock] = tid();
+	/* Update to lock timestamp, not attempt to get lock */
+	rdlock_entry[tid(), rwlock] = gettimeofday_us();
+    }
+    else {
+	report_error(ppfunc(), result);
+	rdlock_entry[tid(), rwlock] = -1;
+    }
+}
+
+probe
+process("/lib64/libc.so.6").function("pthread_rwlock_tryrdlock") !,
+process("/lib64/libc.so.6").function("__pthread_rwlock_tryrdlock") {
+    if (pid() != target())
+	next;
+    if (pid() != target())
+	next;
+    rwlock	= @ARG1;
+    rdlock_entry[tid(), rwlock] = gettimeofday_us();
+}
+
+probe
+process("/lib64/libc.so.6").function("pthread_rwlock_tryrdlock").return !,
+process("/lib64/libc.so.6").function("__pthread_rwlock_tryrdlock").return {
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    rwlock	= @ENTRY_ARG1;
+    if (result == 0) {
+	rdlocks[rwlock] = tid();
+	/* Update to lock timestamp, not attempt to get lock */
+	rdlock_entry[tid(), rwlock] = gettimeofday_us();
+    }
+    else {
+	report_error(ppfunc(), result);
+	rdlock_entry[tid(), rwlock] = -1;
+    }
+}
+
+probe
+process("/lib64/libc.so.6").function("pthread_rwlock_timedrdlock") !,
+process("/lib64/libc.so.6").function("__pthread_rwlock_timedrdlock") {
+    if (pid() != target())
+	next;
+    rwlock	= @ARG1;
+    tmout	= @ARG2;
+    rdlock_entry[tid(), rwlock] = gettimeofday_us();
+    rdlock_entry_timer[tid(), rwlock] = tmout;
+}
+
+probe
+process("/lib64/libc.so.6").function("pthread_rwlock_timedrdlock").return !,
+process("/lib64/libc.so.6").function("__pthread_rwlock_timedrdlock").return {
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    rwlock	= @ENTRY_ARG1;
+    if (result == 0) {
+	/*
+	tmout	= @ENTRY_ARG2;
+	 */
+	rdlocks[rwlock] = tid();
+	/* Update to lock timestamp, not attempt to get lock */
+	rdlock_entry[tid(), rwlock] = gettimeofday_us();
+    }
+    else {
+	if (!trap_on_expected_timedout || result != @ETIMEDOUT)
+	    report_error(ppfunc(), result);
+	rdlock_entry[tid(), rwlock] = -1;
+	rdlock_entry_timer[tid(), rwlock] = 0;
+    }
+}
+
+probe
+process("/lib64/libc.so.6").function("pthread_rwlock_wrlock") !,
+process("/lib64/libc.so.6").function("__pthread_rwlock_wrlock") {
+    if (pid() != target())
+	next;
+    rwlock	= @ARG1;
+    wrlock_entry[tid(), rwlock] = gettimeofday_us();
+}
+
+probe
+process("/lib64/libc.so.6").function("pthread_rwlock_wrlock").return !,
+process("/lib64/libc.so.6").function("__pthread_rwlock_wrlock").return {
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    rwlock	= @ENTRY_ARG1;
+    if (result == 0) {
+	wrlocks[rwlock] = tid();
+	/* Update to lock timestamp, not attempt to get lock */
+	wrlock_entry[tid(), rwlock] = gettimeofday_us();
+    }
+    else {
+	report_error(ppfunc(), result);
+	wrlock_entry[tid(), rwlock] = -1;
+    }
+}
+
+probe
+process("/lib64/libc.so.6").function("pthread_rwlock_trywrlock") !,
+process("/lib64/libc.so.6").function("__pthread_rwlock_trywrlock") {
+    if (pid() != target())
+	next;
+    rwlock	= @ARG1;
+    wrlock_entry[tid(), rwlock] = gettimeofday_us();
+}
+
+probe
+process("/lib64/libc.so.6").function("pthread_rwlock_trywrlock").return !,
+process("/lib64/libc.so.6").function("__pthread_rwlock_trywrlock").return {
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    rwlock	= @ENTRY_ARG1;
+    if (result == 0) {
+	wrlocks[rwlock] = tid();
+	/* Update to lock timestamp, not attempt to get lock */
+	wrlock_entry[tid(), rwlock] = gettimeofday_us();
+    }
+    else {
+	if (!trap_on_expected_busy || result != @EBUSY)
+	    report_error(ppfunc(), result);
+	wrlock_entry[tid(), rwlock] = -1;
+    }
+}
+
+probe
+process("/lib64/libc.so.6").function("pthread_rwlock_timedwrlock") !,
+process("/lib64/libc.so.6").function("__pthread_rwlock_timedwrlock") {
+    if (pid() != target())
+	next;
+    rwlock	= @ARG1;
+    tmout	= @ARG2;
+    wrlock_entry[tid(), rwlock] = gettimeofday_us();
+    wrlock_entry_timer[tid(), rwlock] = tmout;
+}
+
+probe
+process("/lib64/libc.so.6").function("pthread_rwlock_timedwrlock").return !,
+process("/lib64/libc.so.6").function("__pthread_rwlock_timedwrlock").return {
+    if (pid() != target())
+	next;
+    result = @RETURN;
+    if (result == 0) {
+	rwlock	= @ENTRY_ARG1;
+	/*
+	tmout	= @ENTRY_ARG2;
+	 */
+	wrlocks[rwlock] = tid();
+    }
+    else {
+	if (!trap_on_expected_timedout || result != @ETIMEDOUT)
+	    report_error(ppfunc(), result);
+	wrlock_entry[tid(), rwlock] = -1;
+	wrlock_entry_timer[tid(), rwlock] = 0;
+    }
+}
+
+probe
+process("/lib64/libc.so.6").function("pthread_rwlock_unlock").return !,
+process("/lib64/libc.so.6").function("__pthread_rwlock_unlock").return {
+    if (pid() != target())
+	next;
+    result = @RETURN;
+    if (result == 0) {
+	rwlock	= @ENTRY_ARG1;
+	if (wrlocks[rwlock])
+	    /* assert(wrlocks[rwlock] == tid() */
+	    delete wrlocks[rwlock];
+	if (rdlocks[rwlock])
+	    /* assert(rdlocks[rwlock] == tid() */
+	    delete rdlocks[rwlock];
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+
+probe
+process("/lib64/libc.so.6").function("pthread_rwlock_destroy").return !,
+process("/lib64/libc.so.6").function("__pthread_rwlock_destroy").return {
+    if (pid() != target())
+	next;
+    result = @RETURN;
+    if (result == 0) {
+	rwlock	= @ENTRY_ARG1;
+	rwlock_init[rwlock] = -1;
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
+process("/lib64/libc.so.6").function("pthread_spin_init").return !,
+process("/lib64/libc.so.6").function("__pthread_spin_init").return {
+    if (pid() != target())
+	next;
+    result = @RETURN;
+    if (result == 0) {
+	spin	= @ENTRY_ARG1;
+	/*
+	shared	= @ENTRY_ARG2;
+	 */
+	spin_init[spin] = gettimeofday_us();
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
+process("/lib64/libc.so.6").function("pthread_spin_lock") !,
+process("/lib64/libc.so.6").function("__pthread_spin_lock") {
+    if (pid() != target())
+	next;
+    spin	= @ARG1;
+    spin_entry[tid(), spin] = gettimeofday_us();
+}
+
+probe
+process("/lib64/libc.so.6").function("pthread_spin_lock").return !,
+process("/lib64/libc.so.6").function("__pthread_spin_lock").return {
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    spin	= @ENTRY_ARG1;
+    if (result == 0) {
+	spinlocks[spin] = tid();
+	/* Update to lock timestamp, not attempt to get lock */
+	spin_entry[tid(), spin] = gettimeofday_us();
+    }
+    else {
+	report_error(ppfunc(), result);
+	spin_entry[tid(), spin] = -1;
+    }
+}
+
+probe
+process("/lib64/libc.so.6").function("pthread_spin_trylock") !,
+process("/lib64/libc.so.6").function("__pthread_spin_trylock") {
+    if (pid() != target())
+	next;
+    spin	= @ARG1;
+    spin_entry[tid(), spin] = gettimeofday_us();
+}
+
+probe
+process("/lib64/libc.so.6").function("pthread_spin_trylock").return !,
+process("/lib64/libc.so.6").function("__pthread_spin_trylock").return {
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    spin	= @ENTRY_ARG1;
+    if (result == 0) {
+	spinlocks[spin] = tid();
+	/* Update to lock timestamp, not attempt to get lock */
+	spin_entry[tid(), spin] = gettimeofday_us();
+    }
+    else {
+	if (!trap_on_expected_busy || result != @EBUSY)
+	    report_error(ppfunc(), result);
+	spin_entry[tid(), spin] = -1;
+    }
+}
+
+probe
+process("/lib64/libc.so.6").function("pthread_spin_unlock").return !,
+process("/lib64/libc.so.6").function("__pthread_spin_unlock").return {
+    if (pid() != target())
+	next;
+    result = @RETURN;
+    if (result == 0) {
+	spin	= @ENTRY_ARG1;
+	if (spinlocks[spin])
+	    /* assert(spinlocks[spin] == tid() */
+	    delete spinlocks[spin];
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
+process("/lib64/libc.so.6").function("pthread_spin_destroy").return !,
+process("/lib64/libc.so.6").function("__pthread_spin_destroy").return {
+    if (pid() != target())
+	next;
+    result = @RETURN;
+    if (result == 0) {
+	spin	= @ENTRY_ARG1;
+	spin_init[spin] = -1;
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+function plural(count) {
+    return count != 1 ? "s" : "";
+}
+
+function comma(count) {
+    return count ? ", ": "";
+}
+
+function and(count) {
+    return count ? " and ": "";
+}
+
+function time_string(usec:long) {
+    result = "";
+    msec = sec = min = hour = day = 0;
+    temp = usec % 1000000;
+    if (temp != usec) {
+	msec = usec / 1000;
+	usec = temp;
+	if (msec) {
+	    sec = msec / 1000;
+	    if (sec) {
+		msec %= 1000;
+		min = sec / 60;
+		if (min) {
+		    sec %= 60;
+		    hour = min / 60;
+		    if (hour) {
+			min %= 60;
+			day = hour / 24;
+			if (day)
+			    hour %= 24;
+		    }
+		}
+	    }
+	}
+    }
+    if (day)
+	result .= sprintf("%ld day%s", day, plural(day));
+    if (hour)
+	result .= sprintf("%s%ld hour%s",
+			  comma(day), hour, plural(hour));
+    if (min)
+	result .= sprintf("%s%ld min%s",
+			  comma(hour || day), min, plural(min));
+    if (sec)
+	result .= sprintf("%s%ld sec%s",
+			  comma(min || hour || day),
+			  sec, plural(sec));
+    if (msec)
+	result .= sprintf("%s%ld msec%s",
+			  comma(sec || min || hour || day),
+			  msec, plural(msec));
+    if (usec)
+	result .= sprintf("%s%ld usec%s",
+			  and(msec || sec || min || hour || day),
+			  usec, plural(usec));
+    return result;
+}
+
+function report() {
+    printf("\nReport for %s (%s)\n", process_name, process_arguments);
+    if (verbose) {
+	printf("tid to pthread\n");
+	foreach (tid in tid_to_thread) {
+	    thread = tid_to_thread[tid];
+	    printf("    %ld %p %s\n", tid, thread, thread_name[thread]);
+	}
+    }
+    now = gettimeofday_us();
+    foreach (mutex in mutex_lock) {
+	tid = mutex_lock[mutex];
+	if (tid)
+	    details[mutex, now - mutex_lock_entry[tid, mutex]] = tid;
+    }
+    /* Order by time locked */
+    foreach ([mutex, time-] in details) {
+	if (mutex_init[mutex])
+	    printf("%s ",
+		   mutex_init[mutex] > 0 ? "initialized" : "*destroyed");
+	if (mutex_consistent[mutex])
+	    printf("%sconsistent ", mutex_consistent[mutex] < 0 ? "*in" : "");
+	if (mutex_prioceiling[mutex])
+	    printf("%ld prioceiling ", mutex_prioceiling[mutex]);
+	locker = mutex_lock[mutex];
+	printf("mutex %p locked for %s by tid %ld\n",
+	       mutex, time_string(time), locker);
+	foreach ([tid, key] in mutex_lock_entry) {
+	    if (key == mutex && tid != locker && mutex_lock_entry[tid, key])
+		printf("    tid %ld waiting for %s\n", tid,
+		       time_string(now - mutex_lock_entry[tid, key]));
+	}
+    }
+    delete details;
+
+    foreach ([tid, cond] in cond_wait) {
+	if (cond_wait[tid, cond]) {
+	    conditions[cond] = 1;
+	    details[cond, now - cond_wait[tid, cond]] = tid;
+	}
+    }
+    foreach (condition in conditions) {
+	printf("%s ",
+	       cond_init[condition] > 0 ? "initialized" : "*destroyed");
+	printf("condition %p\n", condition);
+	foreach ([cond, time-] in details) {
+	    if (cond == condition) {
+		tid = details[cond, time];
+		mutex = mutex_wait[tid, cond];
+		printf("    mutex %p waiting for %s by tid %ld\n",
+		       mutex, time_string(time), tid);
+	    }
+	}
+    }
+    delete details;
+    delete conditions;
+
+    foreach (wrlock in wrlocks) {
+	tid = wrlocks[wrlock];
+	if (tid)
+	    details[wrlock, now - wrlock_entry[tid, wrlock]] = tid;
+    }
+    foreach ([wrlock, time-] in details) {
+	if (rwlock_init[wrlock])
+	    printf("%s ",
+		   rwlock_init[wrlock] > 0 ? "initialized" : "*destroyed");
+	locker = wrlocks[wrlock];
+	printf("rwlock write lock %p by %ld\n", wrlock, locker);
+	foreach ([tid, key] in wrlock_entry) {
+	    if (key == wrlock && tid != locker && wrlock_entry[tid, key])
+		printf("    tid %ld waiting for %s\n", tid,
+		       time_string(now - wrlock_entry[tid, key]));
+	}
+    }
+    delete details;
+
+    foreach (rdlock in rdlocks) {
+	tid = rdlocks[rdlock];
+	if (tid)
+	    details[rdlock, now - rdlock_entry[tid, rdlock]] = tid;
+    }
+    foreach ([rdlock, time-] in details) {
+	if (rwlock_init[rdlock])
+	    printf("%s ",
+		   rwlock_init[rdlock] > 0 ? "initialized" : "*destroyed");
+	locker = rdlocks[rdlock];
+	printf("rwlock read lock %p by %ld\n", rdlock, locker);
+	foreach ([tid, key] in rdlock_entry) {
+	    if (key == rdlock && tid != locker && rdlock_entry[tid, key])
+		printf("    tid %ld waiting for %s\n", tid,
+		       time_string(now - rdlock_entry[tid, key]));
+	}
+    }
+    delete details;
+
+    foreach (spin in spinlocks) {
+	tid = spinlocks[spin];
+	if (tid)
+	    details[spin, now - spin_entry[tid, spin]] = tid;
+    }
+    foreach ([spin, time-] in details) {
+	if (spin_init[spin])
+	    printf("%s ",
+		   spin_init[spin] > 0 ? "initialized" : "*destroyed");
+	locker = spinlocks[spin];
+	printf("spinlock %p by %ld\n", rdlock, locker);
+	foreach ([tid, key] in spin_entry) {
+	    if (key == spin && tid != locker && spin_entry[tid, key])
+		printf("    tid %ld waiting for %s\n", tid,
+		       time_string(now - spin_entry[tid, key]));
+	}
+    }
+    delete details;
+}
+
+probe signal.send {
+    if (sig_name == "SIGURG" && sig_pid == target())
+	report();
+}
+
+probe kprocess.exec {
+    if (pid() != target())
+	next;
+    exec_process_arguments = argstr;
+}
+
+probe kprocess.exec_complete {
+    if (pid() != target())
+	next;
+    if (success) {
+	if (process_name != "") {
+	    report();
+	    reset();
+	}
+	process_name = execname();
+	process_arguments = exec_process_arguments;
+    }
+}
+
+function reset() {
+    delete tid_to_thread;
+    delete thread_to_tid;
+    delete thread_name;
+    delete mutex_lock;
+    delete mutex_lock_entry;
+    delete mutex_lock_entry_timer;
+    delete mutex_consistent;
+    delete mutex_prioceiling;
+    delete mutex_init;
+    delete mutex_wait;
+    delete cond_wait;
+    delete cond_wait_timer;
+    delete cond_init;
+    delete rwlock_init;
+    delete rdlocks;
+    delete rdlock_entry;
+    delete rdlock_entry_timer;
+    delete wrlocks;
+    delete wrlock_entry;
+    delete wrlock_entry_timer;
+    delete spin_init;
+    delete spin_entry;
+    delete spinlocks;
+}
+
+probe end {
+    report();
+    reset();
+    printf("Stap done.\n");
+}
