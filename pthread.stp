@@ -2,69 +2,117 @@
 
 /* Sample usage:
 
-$ stap pthread.stp -DMAXMAPENTRIES=65536 -Gverbose=1 -c 'java -jar /path/to/sample.jar'
+$ stap pthread.stp -DDMAXMAPENTRIES=65536 -DMAXACTION=65536 -Gverbose=1 -c 'java -jar /path/to/sample.jar'
 Stap ready.
 ...
 Report for java ("/usr/bin/java", ["java", "-jar", ...]
 tid to pthread
-    691209 0x7f30118006c0 
-    691210 0x7f30033ff6c0 
-    691211 0x7f3001a256c0 GC Thread#0
-    691212 0x7f30019246c0 G1 Main Marker
-    691213 0x7f30018236c0 G1 Conc#0
-    691214 0x7f3000a156c0 G1 Refine#0
-    691215 0x7f30009146c0 G1 Service
-    691216 0x7f30006f66c0 VM Periodic Tas
-    691217 0x7f300052f6c0 VM Thread
-    691218 0x7f300042e6c0 Reference Handl
-    691219 0x7f300032e6c0 Finalizer
-    691220 0x7f300022e6c0 Signal Dispatch
-    691221 0x7f300012e6c0 Service Thread
-    691222 0x7f2ffbfff6c0 Monitor Deflati
-    691223 0x7f2ff9fff6c0 C2 CompilerThre
-    691224 0x7f2ff9eff6c0 C1 CompilerThre
-    691225 0x7f2ff9d2e6c0 Notification Th
-    691226 0x7f2ff9c2e6c0 Common-Cleaner
-    691227 0x7f2ff9b2e6c0 C1 CompilerThre
-    691228 0x7f2ff9a2e6c0 Sync Timer Thre
-    691229 0x7f2ff992e6c0 XToolkt-Shutdow
-    691230 0x7f2ff982e6c0 Java2D Disposer
-    691231 0x7f2ff992e6c0 XToolkt-Shutdow
-    691232 0x7f2ff982e6c0 Java2D Disposer
-    691233 0x7f2ff982e6c0 Java2D Disposer
-    691234 0x7f2ff95c26c0 AWT-XAWT
-    691235 0x7f2ff94c26c0 AWT-Shutdown
-    691236 0x7f2ff93c26c0 Timer-0
-    691237 0x7f2ff93c26c0 Timer-0
-    691238 0x7f2ff982e6c0 Java2D Disposer
-    691239 0x7f2ff95c26c0 AWT-XAWT
-    691240 0x7f2ff94c26c0 AWT-Shutdown
-    691241 0x7f2ff8dff6c0 AWT-EventQueue-
-    691242 0x7f2ff8cff6c0 Image Fetcher 3
-    691243 0x7f2ff8bff6c0 Logging-Cleaner
-    691245 0x7f2ff8cff6c0 Image Fetcher 3
-    691248 0x7f2ff8aff6c0 GC Thread#1
-    691249 0x7f2ff86fd6c0 GC Thread#2
-    691250 0x7f2ff85026c0 GC Thread#3
-    691251 0x7f2ff84016c0 GC Thread#4
-    691252 0x7f2ff83006c0 GC Thread#5
-    691253 0x7f2ff81ff6c0 GC Thread#6
-    691254 0x7f2ff3fff6c0 GC Thread#7
-    691255 0x7f2fdc1ff6c0 GC Thread#8
-    691256 0x7f2fc8bff6c0 GC Thread#9
-    691257 0x7f2fc8afe6c0 GC Thread#10
-    691258 0x7f2fc89fd6c0 GC Thread#11
-    691259 0x7f2fc88fc6c0 GC Thread#12
-    691260 0x7f2fc87fb6c0 G1 Conc#1
-    691261 0x7f2fc86fa6c0 G1 Conc#2
-    691262 0x7f2ff9a2e6c0 Sync Timer Thre
-    691263 0x7f2ff992e6c0 XToolkt-Shutdow
-    691264 0x7f2ff8bff6c0 Logging-Cleaner
-    691265 0x7f30119386c0 pool-1-thread-1
-initialized mutex 0x7f2ff4155e28 locked for 8 secs, 462 msecs and 462604 usecs by tid 691219
-initialized mutex 0x7f3013171d28 locked for 8 secs, 460 msecs and 460669 usecs by tid 691222
-initialized mutex 0x7f2f10111f28 locked for 1 sec, 816 msecs and 816427 usecs by tid 691245
-initialized mutex 0x7f2f100ba328 locked for 248656 usecs by tid 691240
+    718394 0x7f20e26006c0 
+    718395 0x7f20d41ff6c0 
+    718396 0x7f20d09426c0 GC Thread#0
+    718397 0x7f20d08416c0 G1 Main Marker
+    718398 0x7f20d07406c0 G1 Conc#0
+    718399 0x7f209c6fa6c0 G1 Refine#0
+    718400 0x7f209c5f96c0 G1 Service
+    718401 0x7f209c4776c0 VM Periodic Tas
+    718402 0x7f209c2b06c0 VM Thread
+    718403 0x7f209c1af6c0 Reference Handl
+    718404 0x7f2097fff6c0 Finalizer
+    718405 0x7f2097eff6c0 Signal Dispatch
+    718406 0x7f2097dff6c0 Service Thread
+    718407 0x7f2097cff6c0 Monitor Deflati
+    718408 0x7f2097bff6c0 C2 CompilerThre
+    718409 0x7f2097aff6c0 C1 CompilerThre
+    718410 0x7f209792e6c0 Notification Th
+    718411 0x7f209782e6c0 Common-Cleaner
+    718412 0x7f209772e6c0 C1 CompilerThre
+    718413 0x7f209762e6c0 C1 CompilerThre
+    718414 0x7f209752e6c0 C1 CompilerThre
+    718415 0x7f209742e6c0 Java2D Disposer
+    718416 0x7f209752e6c0 C1 CompilerThre
+    718417 0x7f209742e6c0 Java2D Disposer
+    718418 0x7f20971f06c0 AWT-XAWT
+    718419 0x7f20970f06c0 Image Fetcher 3
+    718420 0x7f2096ff06c0 Timer-0
+    718421 0x7f209742e6c0 Java2D Disposer
+    718422 0x7f20971f06c0 AWT-XAWT
+    718423 0x7f20970f06c0 Image Fetcher 3
+    718424 0x7f2096d526c0 AWT-Shutdown
+    718425 0x7f20969ff6c0 AWT-EventQueue-
+    718426 0x7f20970f06c0 Image Fetcher 3
+    718427 0x7f20968ff6c0 Sync Timer Thre
+    718429 0x7f20970f06c0 Image Fetcher 3
+    718430 0x7f20968ff6c0 Sync Timer Thre
+    718431 0x7f20e27a36c0 XToolkt-Shutdow
+    718432 0x7f20967ff6c0 Logging-Cleaner
+    718433 0x7f20966ff6c0 pool-1-thread-1
+mutex 0x7f20e3f95c60 locked 99079 times by 24 threads
+    total contention	: 1 sec, 267 msecs and 267043 usecs
+    min contention	: 1 usec
+    max contention	: 845 usecs
+    average contention	: 12 usecs
+mutex 0x7f20c811d8e8 locked 117834 times by 18 threads
+    total contention	: 392942 usecs
+    min contention	: 1 usec
+    max contention	: 178 usecs
+    average contention	: 3 usecs
+mutex 0x7f20e3f712a8 locked 8056 times by 19 threads, 1894 failed locks
+    total contention	: 203079 usecs
+    min contention	: 1 usec
+    max contention	: 552 usecs
+    average contention	: 25 usecs
+mutex 0x7f20e3f71828 locked 45661 times by 7 threads
+    total contention	: 137960 usecs
+    min contention	: 1 usec
+    max contention	: 205 usecs
+    average contention	: 3 usecs
+mutex 0x7f20e3f6f728 locked 37588 times by 23 threads, 60 failed locks
+    total contention	: 113475 usecs
+    min contention	: 1 usec
+    max contention	: 100 usecs
+    average contention	: 3 usecs
+mutex 0x7f20e3f6ff28 locked 30321 times by 22 threads
+    total contention	: 106088 usecs
+    min contention	: 1 usec
+    max contention	: 183 usecs
+    average contention	: 3 usecs
+mutex 0x7f20e3f6fea8 locked 24994 times by 24 threads
+    total contention	: 83383 usecs
+    min contention	: 1 usec
+    max contention	: 89 usecs
+    average contention	: 3 usecs
+mutex 0x7f20e3f711a8 locked 11423 times by 19 threads
+    total contention	: 79441 usecs
+    min contention	: 1 usec
+    max contention	: 133 usecs
+    average contention	: 6 usecs
+mutex 0x7f20c81655d8 locked 23889 times by 7 threads
+    total contention	: 75732 usecs
+    min contention	: 1 usec
+    max contention	: 111 usecs
+    average contention	: 3 usecs
+mutex 0x7f20e3f6fda8 locked 12334 times by 24 threads, 360 failed locks
+    total contention	: 65538 usecs
+    min contention	: 1 usec
+    max contention	: 237 usecs
+    average contention	: 5 usecs
+initialized mutex 0x7f20c8155f28 locked for 8 secs, 559 msecs and 559405 usecs by tid 718404
+initialized mutex 0x7f20e3f71d28 locked for 8 secs, 556 msecs and 556704 usecs by tid 718407
+initialized mutex 0x7f20e3f71c28 locked for 8 secs, 529 msecs and 529568 usecs by tid 718410
+initialized mutex 0x7f20c816e940 locked for 8 secs, 520 msecs and 520033 usecs by tid 718411
+initialized mutex 0x7f20c849a030 locked for 5 secs, 28 msecs and 28994 usecs by tid 718421
+initialized mutex 0x7f1fe0027c28 locked for 1 sec, 535 msecs and 535144 usecs by tid 718429
+initialized mutex 0x7f20c84b8b28 locked for 227813 usecs by tid 718424
+initialized mutex 0x7f20e3f712a8 locked for 212614 usecs by tid 718413
+    tid 718408 waiting for 215268 usecs
+    tid 718409 waiting for 214304 usecs
+    tid 718416 waiting for 213915 usecs
+    tid 718412 waiting for 212846 usecs
+initialized mutex 0x7f20e3f6fd28 locked for 211914 usecs by tid 718425
+    tid 718403 waiting for 8 secs, 558 msecs and 558881 usecs
+initialized mutex 0x7f20e3f6fe28 locked for 211785 usecs by tid 718402
+    tid 718395 waiting for 4 secs, 618 msecs and 618073 usecs
+    tid 718405 waiting for 211795 usecs
 Stap done.
  */
 
@@ -83,6 +131,10 @@ global trap_on_expected_busy = 0;
 global trap_on_expected_timedout = 0;
 
 global verbose = 0;
+/* Number of detailed mutexes to report; sorted by total contention time.
+ * This option is added to avoid too large N vale for -DMAX_ACTIONS=N as
+ * well as too much noise in output.  */
+global report_mutex_count = 10;
 
 private global tid_to_thread;
 private global thread_to_tid;
@@ -93,6 +145,21 @@ private global mutex_lock_entry_timer;
 private global mutex_consistent;
 private global mutex_prioceiling;
 private global mutex_init;
+
+/* Sum of contention time from attempt to lock until getting the lock */
+private global mutex_contention_total_time;
+/* Minimum wait time to get the lock */
+private global mutex_contention_min_time;
+/* Maximum wait time to get the lock */
+private global mutex_contention_max_time;
+/* Number of successful locks */
+private global mutex_contention_count;
+/* Number of threads that did get the mutex lock */
+private global mutex_contention_per_thread;
+/* Number of failed trylock calls */
+private global mutex_contention_fail_try;
+/* Number of failed timedlock calls */
+private global mutex_contention_fail_timed;
 
 private global conditions;
 private global mutex_wait;
@@ -116,6 +183,7 @@ global process_name = "";
 global process_arguments, exec_process_arguments;
 
 private global details;
+private global details_thread_count;
 
 @define	EPERM			%(   1 %)
 @define EAGAIN			%(  11 %)
@@ -242,7 +310,8 @@ process("/lib64/libc.so.6").function("__pthread_setname_np").return {
     if (result == 0) {
 	thread	= @ENTRY_ARG1;
 	name	= @ENTRY_ARG2;
-	thread_name[thread] = user_string(name);
+	if (verbose)
+	    thread_name[thread] = user_string(name);
     }
     else
 	report_error(ppfunc(), result);
@@ -291,7 +360,8 @@ process("/lib64/libc.so.6").function("__pthread_exit") {
     thread = tid_to_thread[tid()];
     delete tid_to_thread[tid()];
     delete thread_to_tid[thread];
-    delete thread_name[thread];
+    if (verbose)
+	delete thread_name[thread];
 }
 
 probe
@@ -305,7 +375,8 @@ process("/lib64/libc.so.6").function("__pthread_join").return {
 	tid = thread_to_tid[thread];
 	delete tid_to_thread[tid];
 	delete thread_to_tid[thread];
-	delete thread_name[thread];
+	if (verbose)
+	    delete thread_name[thread];
     }
     else
 	report_error(ppfunc(), result);
@@ -342,21 +413,49 @@ process("/lib64/libc.so.6").function("__pthread_mutex_init").return {
 	report_error(ppfunc(), result);
 }
 
+function common_mutex_lock(mutex) {
+    now = gettimeofday_us();
+    mutex_lock[mutex] = tid();
+    if (verbose) {
+	diff = now - mutex_lock_entry[tid(), mutex];
+	mutex_contention_total_time[mutex] += diff;
+	if (!mutex_contention_min_time[mutex] ||
+	    mutex_contention_min_time[mutex] > diff)
+	    mutex_contention_min_time[mutex] = diff;
+	if (mutex_contention_max_time[mutex] < diff)
+	    mutex_contention_max_time[mutex] = diff;
+	++mutex_contention_count[mutex];
+	++mutex_contention_per_thread[tid(), mutex];
+    }
+    /* Update from attempt lock time to acquired lock time */
+    mutex_lock_entry[tid(), mutex] = now;
+}
+
+probe
+process("/lib64/libc.so.6").function("pthread_mutex_trylock") !,
+process("/lib64/libc.so.6").function("__pthread_mutex_trylock") {
+    if (pid() != target())
+	next;
+    mutex = @ARG1;
+    mutex_lock_entry[tid(), mutex] = gettimeofday_us();
+}
+
 probe
 process("/lib64/libc.so.6").function("pthread_mutex_trylock").return !,
 process("/lib64/libc.so.6").function("__pthread_mutex_trylock").return {
     if (pid() != target())
 	next;
     result = @RETURN;
-    if (result == 0) {
-	mutex = @ENTRY_ARG1;
-	mutex_lock_entry[tid(), mutex] = gettimeofday_us();
-    }
+    mutex = @ENTRY_ARG1;
+    if (result == 0)
+	common_mutex_lock(mutex);
     /* EAGAIN is returned if the counter wrapers around */
     else {
 	if (!trap_on_expected_busy || result != @EBUSY)
 	    report_error(ppfunc(), result);
-	mutex_lock_entry[tid(), mutex] = -1;
+	if (verbose)
+	    ++mutex_contention_fail_try[mutex];
+	delete mutex_lock_entry[tid(), mutex];
     }
 }
 
@@ -378,16 +477,17 @@ process("/lib64/libc.so.6").function("__pthread_mutex_timedlock").return {
 	next;
     result = @RETURN;
     mutex = @ENTRY_ARG1;
-    if (result == 0) {
-	mutex_lock_entry[tid(), mutex] = gettimeofday_us();
-	mutex_lock_entry_timer[tid(), mutex] = 0;
-    }
+    if (result == 0)
+	common_mutex_lock(mutex);
     /* EAGAIN is returned if the counter wrapers around */
     else {
 	if (!trap_on_expected_timedout || result != @ETIMEDOUT)
 	    report_error(ppfunc(), result);
-	mutex_lock_entry[tid(), mutex] = -1;
+	delete mutex_lock_entry[tid(), mutex];
+	if (verbose)
+	    ++mutex_contention_fail_timed[mutex];
     }
+    delete mutex_lock_entry_timer[tid(), mutex];
 }
 
 probe
@@ -406,16 +506,14 @@ process("/lib64/libc.so.6").function("__pthread_mutex_lock").return {
 	next;
     result = @RETURN;
     mutex = @ENTRY_ARG1;
-    if (result == 0) {
-	mutex_lock[mutex] = tid();
-	mutex_lock_entry[tid(), mutex] = gettimeofday_us();
-    }
+    if (result == 0)
+	common_mutex_lock(mutex);
     else {
 	/* Use -1 to flag the inconsistent state */
 	if (result == @EOWNERDEAD)
 	    mutex_consistent[mutex] = -1;
 	report_error(ppfunc(), result);
-	mutex_lock_entry[tid(), mutex] = -1;
+	delete mutex_lock_entry[tid(), mutex];
     }
 }
 
@@ -1015,6 +1113,43 @@ function report() {
 	    printf("    %ld %p %s\n", tid, thread, thread_name[thread]);
 	}
     }
+    if (verbose) {
+	count = 0;
+	foreach ([tid, mutex] in mutex_contention_per_thread) {
+	    ++details_thread_count[mutex];
+	}
+	foreach (mutex in mutex_contention_total_time) {
+	    details[mutex, mutex_contention_total_time[mutex]] =
+		details_thread_count[mutex];
+	}
+	delete details_thread_count;
+	foreach ([mutex, time-] in details) {
+	    if (mutex_contention_count[mutex]) {
+		if (count++ >= report_mutex_count)
+		    break;
+		printf("mutex %p locked %ld times by %ld threads",
+		       mutex, mutex_contention_count[mutex],
+		       details[mutex, time]);
+		if (mutex_contention_fail_try[mutex])
+		    printf(", %ld failed locks",
+			   mutex_contention_fail_try[mutex]);
+		if (mutex_contention_fail_timed[mutex])
+		    printf(", %ld timedout locks",
+			   mutex_contention_fail_timed[mutex]);
+		printf("\n");
+		printf("    total contention	: %s\n", time_string(time));
+		printf("    min contention	: %s\n",
+		       time_string(mutex_contention_min_time[mutex]));
+		printf("    max contention	: %s\n",
+		       time_string(mutex_contention_max_time[mutex]));
+		printf("    average contention	: %s\n",
+		       time_string(mutex_contention_total_time[mutex] /
+				   mutex_contention_count[mutex]));
+	    }
+	}
+	delete details;
+    }
+
     now = gettimeofday_us();
     foreach (mutex in mutex_lock) {
 	tid = mutex_lock[mutex];
@@ -1148,7 +1283,16 @@ probe kprocess.exec_complete {
 function reset() {
     delete tid_to_thread;
     delete thread_to_tid;
-    delete thread_name;
+    if (verbose) {
+	delete thread_name;
+	delete mutex_contention_total_time;
+	delete mutex_contention_min_time;
+	delete mutex_contention_max_time;
+	delete mutex_contention_count;
+	delete mutex_contention_per_thread;
+	delete mutex_contention_fail_try;
+	delete mutex_contention_fail_timed;
+    }
     delete mutex_lock;
     delete mutex_lock_entry;
     delete mutex_lock_entry_timer;
