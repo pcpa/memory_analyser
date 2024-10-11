@@ -7,112 +7,192 @@ Stap ready.
 ...
 Report for java ("/usr/bin/java", ["java", "-jar", ...]
 tid to pthread
-    718394 0x7f20e26006c0 
-    718395 0x7f20d41ff6c0 
-    718396 0x7f20d09426c0 GC Thread#0
-    718397 0x7f20d08416c0 G1 Main Marker
-    718398 0x7f20d07406c0 G1 Conc#0
-    718399 0x7f209c6fa6c0 G1 Refine#0
-    718400 0x7f209c5f96c0 G1 Service
-    718401 0x7f209c4776c0 VM Periodic Tas
-    718402 0x7f209c2b06c0 VM Thread
-    718403 0x7f209c1af6c0 Reference Handl
-    718404 0x7f2097fff6c0 Finalizer
-    718405 0x7f2097eff6c0 Signal Dispatch
-    718406 0x7f2097dff6c0 Service Thread
-    718407 0x7f2097cff6c0 Monitor Deflati
-    718408 0x7f2097bff6c0 C2 CompilerThre
-    718409 0x7f2097aff6c0 C1 CompilerThre
-    718410 0x7f209792e6c0 Notification Th
-    718411 0x7f209782e6c0 Common-Cleaner
-    718412 0x7f209772e6c0 C1 CompilerThre
-    718413 0x7f209762e6c0 C1 CompilerThre
-    718414 0x7f209752e6c0 C1 CompilerThre
-    718415 0x7f209742e6c0 Java2D Disposer
-    718416 0x7f209752e6c0 C1 CompilerThre
-    718417 0x7f209742e6c0 Java2D Disposer
-    718418 0x7f20971f06c0 AWT-XAWT
-    718419 0x7f20970f06c0 Image Fetcher 3
-    718420 0x7f2096ff06c0 Timer-0
-    718421 0x7f209742e6c0 Java2D Disposer
-    718422 0x7f20971f06c0 AWT-XAWT
-    718423 0x7f20970f06c0 Image Fetcher 3
-    718424 0x7f2096d526c0 AWT-Shutdown
-    718425 0x7f20969ff6c0 AWT-EventQueue-
-    718426 0x7f20970f06c0 Image Fetcher 3
-    718427 0x7f20968ff6c0 Sync Timer Thre
-    718429 0x7f20970f06c0 Image Fetcher 3
-    718430 0x7f20968ff6c0 Sync Timer Thre
-    718431 0x7f20e27a36c0 XToolkt-Shutdow
-    718432 0x7f20967ff6c0 Logging-Cleaner
-    718433 0x7f20966ff6c0 pool-1-thread-1
-mutex 0x7f20e3f95c60 locked 99079 times by 24 threads
-    total contention	: 1 sec, 267 msecs and 267043 usecs
+    729938 0x7f1d3ac006c0 
+    729939 0x7f1d3adb26c0 
+    729940 0x7f1d24fff6c0 GC Thread#0
+    729941 0x7f1d24efe6c0 G1 Main Marker
+    729942 0x7f1d24dfd6c0 G1 Conc#0
+    729943 0x7f1d081ff6c0 G1 Refine#0
+    729944 0x7f1cf4bff6c0 G1 Service
+    729945 0x7f1cf4afe6c0 VM Periodic Tas
+    729946 0x7f1cf49376c0 VM Thread
+    729947 0x7f1cf48366c0 Reference Handl
+    729948 0x7f1cf47366c0 Finalizer
+    729949 0x7f1cf46366c0 Signal Dispatch
+    729950 0x7f1cf45366c0 Service Thread
+    729951 0x7f1cf44366c0 Monitor Deflati
+    729952 0x7f1cf43366c0 C2 CompilerThre
+    729953 0x7f1cf42366c0 C1 CompilerThre
+    729954 0x7f1ceffff6c0 Notification Th
+    729955 0x7f1cefeff6c0 Common-Cleaner
+    729956 0x7f1cefdff6c0 C1 CompilerThre
+    729957 0x7f1cefcff6c0 Sync Timer Thre
+    729958 0x7f1cefbff6c0 XToolkt-Shutdow
+    729959 0x7f1cefaff6c0 Java2D Disposer
+    729960 0x7f1cefbff6c0 XToolkt-Shutdow
+    729961 0x7f1cefaff6c0 Java2D Disposer
+    729962 0x7f1cef8c16c0 AWT-XAWT
+    729963 0x7f1cef7c16c0 AWT-Shutdown
+    729964 0x7f1cef6c16c0 Timer-0
+    729965 0x7f1cefaff6c0 Java2D Disposer
+    729966 0x7f1cef8c16c0 AWT-XAWT
+    729967 0x7f1cef7c16c0 AWT-Shutdown
+    729968 0x7f1cef1556c0 AWT-EventQueue-
+    729969 0x7f1cef0556c0 Image Fetcher 3
+    729970 0x7f1ceef556c0 Logging-Cleaner
+    729972 0x7f1cef0556c0 Image Fetcher 3
+    729975 0x7f1cefcff6c0 Sync Timer Thre
+    729976 0x7f1cefbff6c0 XToolkt-Shutdow
+    729977 0x7f1ceef556c0 Logging-Cleaner
+    729978 0x7f1d3aeb26c0 pool-1-thread-1
+mutex 0x7f1d3c595c60 locked 90810 times by 23 threads
+    total contention	: 1 sec, 112 msecs and 112574 usecs
     min contention	: 1 usec
-    max contention	: 845 usecs
+    max contention	: 954 usecs
     average contention	: 12 usecs
-mutex 0x7f20c811d8e8 locked 117834 times by 18 threads
-    total contention	: 392942 usecs
+    total lock		: 780683 usecs
+    min lock		: 2 usecs
+    max lock		: 2928 usecs
+    average lock	: 8 usecs
+mutex 0x7f1d2011d8e8 locked 117537 times by 18 threads
+    total contention	: 418145 usecs
     min contention	: 1 usec
-    max contention	: 178 usecs
+    max contention	: 153 usecs
     average contention	: 3 usecs
-mutex 0x7f20e3f712a8 locked 8056 times by 19 threads, 1894 failed locks
-    total contention	: 203079 usecs
+    total lock		: 613125 usecs
+    min lock		: 2 usecs
+    max lock		: 236 usecs
+    average lock	: 5 usecs
+mutex 0x7f1d3c571828 locked 45645 times by 7 threads
+    total contention	: 152136 usecs
     min contention	: 1 usec
-    max contention	: 552 usecs
-    average contention	: 25 usecs
-mutex 0x7f20e3f71828 locked 45661 times by 7 threads
-    total contention	: 137960 usecs
-    min contention	: 1 usec
-    max contention	: 205 usecs
+    max contention	: 112 usecs
     average contention	: 3 usecs
-mutex 0x7f20e3f6f728 locked 37588 times by 23 threads, 60 failed locks
-    total contention	: 113475 usecs
+    total lock		: 227895 usecs
+    min lock		: 2 usecs
+    max lock		: 146 usecs
+    average lock	: 4 usecs
+mutex 0x7f1d3c56f728 locked 37512 times by 21 threads, 49 failed locks
+    total contention	: 117372 usecs
     min contention	: 1 usec
     max contention	: 100 usecs
     average contention	: 3 usecs
-mutex 0x7f20e3f6ff28 locked 30321 times by 22 threads
-    total contention	: 106088 usecs
+    total lock		: 229186 usecs
+    min lock		: 2 usecs
+    max lock		: 143 usecs
+    average lock	: 6 usecs
+mutex 0x7f1d3c56ff28 locked 30236 times by 21 threads
+    total contention	: 115713 usecs
     min contention	: 1 usec
-    max contention	: 183 usecs
+    max contention	: 150 usecs
     average contention	: 3 usecs
-mutex 0x7f20e3f6fea8 locked 24994 times by 24 threads
-    total contention	: 83383 usecs
+    total lock		: 299412 usecs
+    min lock		: 2 usecs
+    max lock		: 368 usecs
+    average lock	: 9 usecs
+mutex 0x7f1d3c56fea8 locked 24902 times by 23 threads
+    total contention	: 85642 usecs
     min contention	: 1 usec
-    max contention	: 89 usecs
+    max contention	: 101 usecs
     average contention	: 3 usecs
-mutex 0x7f20e3f711a8 locked 11423 times by 19 threads
-    total contention	: 79441 usecs
+    total lock		: 129140 usecs
+    min lock		: 2 usecs
+    max lock		: 181 usecs
+    average lock	: 5 usecs
+mutex 0x7f1d3c5711a8 locked 11044 times by 18 threads
+    total contention	: 81464 usecs
     min contention	: 1 usec
-    max contention	: 133 usecs
-    average contention	: 6 usecs
-mutex 0x7f20c81655d8 locked 23889 times by 7 threads
-    total contention	: 75732 usecs
+    max contention	: 456 usecs
+    average contention	: 7 usecs
+    total lock		: 101871 usecs
+    min lock		: 2 usecs
+    max lock		: 156 usecs
+    average lock	: 9 usecs
+mutex 0x7f1d201655d8 locked 23882 times by 5 threads
+    total contention	: 76406 usecs
     min contention	: 1 usec
-    max contention	: 111 usecs
+    max contention	: 155 usecs
     average contention	: 3 usecs
-mutex 0x7f20e3f6fda8 locked 12334 times by 24 threads, 360 failed locks
-    total contention	: 65538 usecs
+    total lock		: 116617 usecs
+    min lock		: 2 usecs
+    max lock		: 347 usecs
+    average lock	: 4 usecs
+mutex 0x7f1d3c56fda8 locked 12147 times by 23 threads, 364 failed locks
+    total contention	: 67292 usecs
     min contention	: 1 usec
-    max contention	: 237 usecs
+    max contention	: 257 usecs
     average contention	: 5 usecs
-initialized mutex 0x7f20c8155f28 locked for 8 secs, 559 msecs and 559405 usecs by tid 718404
-initialized mutex 0x7f20e3f71d28 locked for 8 secs, 556 msecs and 556704 usecs by tid 718407
-initialized mutex 0x7f20e3f71c28 locked for 8 secs, 529 msecs and 529568 usecs by tid 718410
-initialized mutex 0x7f20c816e940 locked for 8 secs, 520 msecs and 520033 usecs by tid 718411
-initialized mutex 0x7f20c849a030 locked for 5 secs, 28 msecs and 28994 usecs by tid 718421
-initialized mutex 0x7f1fe0027c28 locked for 1 sec, 535 msecs and 535144 usecs by tid 718429
-initialized mutex 0x7f20c84b8b28 locked for 227813 usecs by tid 718424
-initialized mutex 0x7f20e3f712a8 locked for 212614 usecs by tid 718413
-    tid 718408 waiting for 215268 usecs
-    tid 718409 waiting for 214304 usecs
-    tid 718416 waiting for 213915 usecs
-    tid 718412 waiting for 212846 usecs
-initialized mutex 0x7f20e3f6fd28 locked for 211914 usecs by tid 718425
-    tid 718403 waiting for 8 secs, 558 msecs and 558881 usecs
-initialized mutex 0x7f20e3f6fe28 locked for 211785 usecs by tid 718402
-    tid 718395 waiting for 4 secs, 618 msecs and 618073 usecs
-    tid 718405 waiting for 211795 usecs
+    total lock		: 444117 usecs
+    min lock		: 2 usecs
+    max lock		: 505 usecs
+    average lock	: 36 usecs
+mutex 0x7f1d3c56f7a8 locked 16915 times by 18 threads, 33 failed locks
+    total contention	: 61479 usecs
+    min contention	: 1 usec
+    max contention	: 509 usecs
+    average contention	: 3 usecs
+    total lock		: 92933 usecs
+    min lock		: 2 usecs
+    max lock		: 124 usecs
+    average lock	: 5 usecs
+initialized mutex 0x7f1d3c56fd28 locked for 8 secs, 973 msecs and 973993 usecs by tid 729947
+    tid 729939 waiting for 6 secs, 141 msecs and 141258 usecs
+    tid 729968 waiting for 197852 usecs
+    tid 729977 waiting for 209899 usecs
+initialized mutex 0x7f1d20155f28 locked for 8 secs, 973 msecs and 973928 usecs by tid 729948
+initialized mutex 0x7f1d3c571d28 locked for 8 secs, 971 msecs and 971523 usecs by tid 729951
+initialized mutex 0x7f1d3c571c28 locked for 8 secs, 946 msecs and 946303 usecs by tid 729954
+initialized mutex 0x7f1d2016e940 locked for 8 secs, 938 msecs and 938116 usecs by tid 729955
+initialized mutex 0x7f1d20492980 locked for 5 secs, 355 msecs and 355743 usecs by tid 729965
+initialized mutex 0x7f1d3c56fe28 locked for 4 secs, 937 msecs and 937701 usecs by tid 729939
+    tid 729946 waiting for 197767 usecs
+    tid 729960 waiting for 2 secs, 317 msecs and 317141 usecs
+    tid 729957 waiting for 2 secs, 309 msecs and 309423 usecs
+    tid 729970 waiting for 3 secs, 996 msecs and 996821 usecs
+    tid 729969 waiting for 3 secs, 923 msecs and 923610 usecs
+    tid 729968 waiting for 210225 usecs
+    tid 729964 waiting for 210007 usecs
+    tid 729977 waiting for 208692 usecs
+    tid 729976 waiting for 200549 usecs
+    tid 729975 waiting for 199589 usecs
+    tid 729978 waiting for 198603 usecs
+    tid 729949 waiting for 197737 usecs
+initialized mutex 0x7f1c3c0c2e28 locked for 1 sec, 627 msecs and 627554 usecs by tid 729972
+    tid 729968 waiting for 1 sec, 636 msecs and 636547 usecs
+initialized mutex 0x7f1d3c56fb28 locked for 355654 usecs by tid 729946
+    tid 729939 waiting for 5 secs, 448 msecs and 448039 usecs
+    tid 729968 waiting for 197845 usecs
+initialized mutex 0x7f1c38057828 locked for 213644 usecs by tid 729967
+    tid 729968 waiting for 213755 usecs
+initialized mutex 0x7f1d3c5712a8 locked for 205855 usecs by tid 729952
+    tid 729959 waiting for 8 secs, 841 msecs and 841187 usecs
+    tid 729958 waiting for 8 secs, 863 msecs and 863429 usecs
+    tid 729963 waiting for 6 secs, 99 msecs and 99236 usecs
+    tid 729962 waiting for 6 secs, 182 msecs and 182426 usecs
+    tid 729961 waiting for 6 secs, 125 msecs and 125760 usecs
+    tid 729939 waiting for 4 secs, 940 msecs and 940317 usecs
+    tid 729969 waiting for 4 secs, 29 msecs and 29689 usecs
+    tid 729970 waiting for 4 secs, 100 msecs and 100698 usecs
+    tid 729960 waiting for 3 secs, 226 msecs and 226093 usecs
+    tid 729957 waiting for 3 secs, 224 msecs and 224851 usecs
+    tid 729968 waiting for 199633 usecs
+    tid 729978 waiting for 201909 usecs
+    tid 729953 waiting for 197844 usecs
+initialized mutex 0x7f1d3c571ca8 locked for 198468 usecs by tid 729950
+    tid 729959 waiting for 8 secs, 739 msecs and 739890 usecs
+    tid 729958 waiting for 8 secs, 739 msecs and 739798 usecs
+    tid 729946 waiting for 197669 usecs
+    tid 729963 waiting for 5 secs, 988 msecs and 988689 usecs
+    tid 729962 waiting for 5 secs, 987 msecs and 987603 usecs
+    tid 729970 waiting for 3 secs, 996 msecs and 996709 usecs
+    tid 729969 waiting for 3 secs, 923 msecs and 923493 usecs
+    tid 729960 waiting for 2 secs, 317 msecs and 317098 usecs
+    tid 729957 waiting for 2 secs, 309 msecs and 309387 usecs
+    tid 729964 waiting for 209203 usecs
+    tid 729977 waiting for 208601 usecs
+    tid 729976 waiting for 200484 usecs
+    tid 729975 waiting for 199543 usecs
+    tid 729978 waiting for 198559 usecs
 Stap done.
  */
 
@@ -140,6 +220,7 @@ private global tid_to_thread;
 private global thread_to_tid;
 private global thread_name;
 private global mutex_lock;
+private global mutex_lock_count;
 private global mutex_lock_entry;
 private global mutex_lock_entry_timer;
 private global mutex_consistent;
@@ -420,21 +501,23 @@ process("/lib64/libc.so.6").function("__pthread_mutex_init").return {
 }
 
 function common_mutex_lock(mutex) {
-    now = gettimeofday_us();
-    mutex_lock[mutex] = tid();
-    if (verbose) {
-	diff = now - mutex_lock_entry[tid(), mutex];
-	mutex_contention_total_time[mutex] += diff;
-	if (!mutex_contention_min_time[mutex] ||
-	    mutex_contention_min_time[mutex] > diff)
-	    mutex_contention_min_time[mutex] = diff;
-	if (mutex_contention_max_time[mutex] < diff)
-	    mutex_contention_max_time[mutex] = diff;
-	++mutex_contention_count[mutex];
-	++mutex_contention_per_thread[tid(), mutex];
+    if ((++mutex_lock_count[mutex]) == 1) {
+	mutex_lock[mutex] = tid();
+	now = gettimeofday_us();
+	if (verbose) {
+	    diff = now - mutex_lock_entry[tid(), mutex];
+	    mutex_contention_total_time[mutex] += diff;
+	    if (!mutex_contention_min_time[mutex] ||
+		mutex_contention_min_time[mutex] > diff)
+		mutex_contention_min_time[mutex] = diff;
+	    if (mutex_contention_max_time[mutex] < diff)
+		mutex_contention_max_time[mutex] = diff;
+	    ++mutex_contention_count[mutex];
+	    ++mutex_contention_per_thread[tid(), mutex];
+	}
+	/* Update from attempt lock time to acquired lock time */
+	mutex_lock_entry[tid(), mutex] = now;
     }
-    /* Update from attempt lock time to acquired lock time */
-    mutex_lock_entry[tid(), mutex] = now;
 }
 
 probe
@@ -578,7 +661,7 @@ process("/lib64/libc.so.6").function("__pthread_mutex_unlock").return {
     if (result)
 	report_error(ppfunc(), result);
     else {
-	if (mutex_lock[mutex]) {
+	if (--mutex_lock_count[mutex] == 0) {
 	    now = gettimeofday_us();
 	    diff = now - mutex_lock_entry[tid(), mutex];
 	    mutex_lock_total_time[mutex] += diff;
@@ -593,13 +676,7 @@ process("/lib64/libc.so.6").function("__pthread_mutex_unlock").return {
 	    delete mutex_lock[mutex];
 	    delete mutex_lock_entry[tid(), mutex];
 	    delete mutex_lock_entry_timer[tid(), mutex];
-	}
-	else {
-	    /* FIXME until properly handling recursive mutexes*/
-	    /*
-	    printf("mutex %p already unlocked\n", mutex);
-	    print_ubacktrace();
-	     */
+	    delete mutex_lock_count[mutex];
 	}
     }
 }
