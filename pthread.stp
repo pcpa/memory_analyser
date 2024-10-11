@@ -160,6 +160,12 @@ private global mutex_contention_per_thread;
 private global mutex_contention_fail_try;
 /* Number of failed timedlock calls */
 private global mutex_contention_fail_timed;
+/* Sum of lock time from lock to unlock */
+private global mutex_lock_total_time;
+/* Minimum lock time */
+private global mutex_lock_min_time;
+/* Maximum lock time */
+private global mutex_lock_max_time;
 
 private global conditions;
 private global mutex_wait;
@@ -572,9 +578,29 @@ process("/lib64/libc.so.6").function("__pthread_mutex_unlock").return {
     if (result)
 	report_error(ppfunc(), result);
     else {
-	delete mutex_lock[mutex];
-	delete mutex_lock_entry[tid(), mutex];
-	delete mutex_lock_entry_timer[tid(), mutex];
+	if (mutex_lock[mutex]) {
+	    now = gettimeofday_us();
+	    diff = now - mutex_lock_entry[tid(), mutex];
+	    mutex_lock_total_time[mutex] += diff;
+	    if (!mutex_lock_min_time[mutex] ||
+		mutex_lock_min_time[mutex] > diff)
+		mutex_lock_min_time[mutex] = diff;
+	    if (mutex_lock_max_time[mutex] < diff)
+		mutex_lock_max_time[mutex] = diff;
+	    /* mutex_lock_count and mutex_lock_per_thread would be basically
+	     * the same as mutex_contention_*, not counting pending or active
+	     * locks. */
+	    delete mutex_lock[mutex];
+	    delete mutex_lock_entry[tid(), mutex];
+	    delete mutex_lock_entry_timer[tid(), mutex];
+	}
+	else {
+	    /* FIXME until properly handling recursive mutexes*/
+	    /*
+	    printf("mutex %p already unlocked\n", mutex);
+	    print_ubacktrace();
+	     */
+	}
     }
 }
 
@@ -1145,6 +1171,15 @@ function report() {
 		printf("    average contention	: %s\n",
 		       time_string(mutex_contention_total_time[mutex] /
 				   mutex_contention_count[mutex]));
+		printf("    total lock		: %s\n",
+		       time_string(mutex_lock_total_time[mutex]));
+		printf("    min lock		: %s\n",
+		       time_string(mutex_lock_min_time[mutex]));
+		printf("    max lock		: %s\n",
+		       time_string(mutex_lock_max_time[mutex]));
+		printf("    average lock	: %s\n",
+		       time_string(mutex_lock_total_time[mutex] /
+				   mutex_contention_count[mutex]));
 	    }
 	}
 	delete details;
@@ -1292,6 +1327,9 @@ function reset() {
 	delete mutex_contention_per_thread;
 	delete mutex_contention_fail_try;
 	delete mutex_contention_fail_timed;
+	delete mutex_lock_total_time;
+	delete mutex_lock_min_time;
+	delete mutex_lock_max_time;
     }
     delete mutex_lock;
     delete mutex_lock_entry;
