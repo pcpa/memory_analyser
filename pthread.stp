@@ -269,6 +269,10 @@ private global cond_wait_min_time;
 private global cond_wait_max_time;
 /* Number of failed timed_cond_wait */
 private global cond_wait_timedout;
+private global cond_signal_count;
+private global cond_signal_per_thread;
+private global cond_broadcast_count;
+private global cond_broadcast_per_thread;
 
 private global rwlock_init;
 private global rdlock_entry;
@@ -287,6 +291,8 @@ global process_arguments, exec_process_arguments;
 
 private global details;
 private global details_thread_count;
+private global details_signal_count;
+private global details_broadcast_count;
 
 @define	EPERM			%(   1 %)
 @define EAGAIN			%(  11 %)
@@ -736,24 +742,25 @@ process("/lib64/libc.so.6").function("pthread_cond_broadcast").return {
 	next;
     result = @RETURN;
     if (result == 0) {
-	/*
 	cond = @ENTRY_ARG1;
-	 */
+	++cond_broadcast_count[cond];
+	++cond_broadcast_per_thread[tid(), cond];
     }
     else
 	report_error(ppfunc(), result);
 }
 
 probe
+process("/lib64/libc.so.6").function("___pthread_cond_signal").return !,
 process("/lib64/libc.so.6").function("__pthread_cond_signal").return !,
 process("/lib64/libc.so.6").function("pthread_cond_signal").return {
     if (pid() != target())
 	next;
     result = @RETURN;
     if (result == 0) {
-	/*
 	cond = @ENTRY_ARG1;
-	 */
+	++cond_signal_count[cond];
+	++cond_signal_per_thread[tid(), cond];
     }
     else
 	report_error(ppfunc(), result);
@@ -1358,6 +1365,12 @@ function report() {
 	foreach ([tid, cond] in cond_wait_per_thread) {
 	    ++details_thread_count[cond];
 	}
+	foreach ([tid, cond] in cond_signal_per_thread) {
+	    ++details_signal_count[cond];
+	}
+	foreach ([tid, cond] in cond_broadcast_per_thread) {
+	    ++details_broadcast_count[cond];
+	}
 	foreach (cond in cond_wait_total_time) {
 	    details[cond, cond_wait_total_time[cond]] =
 		details_thread_count[cond];
@@ -1377,6 +1390,18 @@ function report() {
 		if (cond_wait_timedout[cond])
 		    printf(", %ld timedout waits",
 			   cond_wait_timedout[cond]);
+	    if (cond_signal_count[cond])
+		printf(", signaled %ld time%s by %ld thread%s",
+		       cond_signal_count[cond],
+		       plural(cond_signal_count[cond]),
+		       details_signal_count[cond],
+		       plural(details_signal_count[cond]));
+	    if (cond_broadcast_count[cond])
+		printf(", broadcast %ld time%s by %ld thread%s",
+		       cond_broadcast_count[cond],
+		       plural(cond_broadcast_count[cond]),
+		       details_broadcast_count[cond],
+		       plural(details_broadcast_count[cond]));
 		printf("\n");
 		printf("    total wait	: %s\n", time_string(time));
 		printf("    min wait	: %s\n",
@@ -1387,6 +1412,8 @@ function report() {
 		       time_string(cond_wait_total_time[cond] /
 				   cond_wait_count[cond]));
 	}
+	delete details_broadcast_count;
+	delete details_signal_count;
 	delete details;
     }
 
@@ -1515,6 +1542,10 @@ function reset() {
 	delete cond_wait_min_time;
 	delete cond_wait_max_time;
 	delete cond_wait_timedout;
+	delete cond_signal_count;
+	delete cond_signal_per_thread;
+	delete cond_broadcast_count;
+	delete cond_broadcast_per_thread;
     }
     delete mutex_lock;
     delete mutex_lock_entry;
