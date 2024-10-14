@@ -357,8 +357,8 @@ function report_error(where:string, errno:long) {
 }
 
 probe
-process("/lib64/libc.so.6").function("pthread_create").return !,
-process("/lib64/libc.so.6").function("__pthread_create").return {
+process("/lib64/libc.so.6").function("__pthread_create").return !,
+process("/lib64/libc.so.6").function("pthread_create").return {
     if (pid() != target())
 	next;
     result	= @RETURN;
@@ -405,8 +405,8 @@ process("/lib64/libc.so.6").mark("pthread_start") {
 }
 
 probe
-process("/lib64/libc.so.6").function("pthread_setname_np").return !,
-process("/lib64/libc.so.6").function("__pthread_setname_np").return {
+process("/lib64/libc.so.6").function("__pthread_setname_np").return !,
+process("/lib64/libc.so.6").function("pthread_setname_np").return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -421,8 +421,8 @@ process("/lib64/libc.so.6").function("__pthread_setname_np").return {
 }
 
 probe
-process("/lib64/libc.so.6").function("pthread_cancel").return !,
-process("/lib64/libc.so.6").function("__pthread_cancel").return {
+process("/lib64/libc.so.6").function("__pthread_cancel").return !,
+process("/lib64/libc.so.6").function("pthread_cancel").return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -435,16 +435,16 @@ process("/lib64/libc.so.6").function("__pthread_cancel").return {
 
 /*
 probe
-process("/lib64/libc.so.6").function("pthread_testcancel") !,
-process("/lib64/libc.so.6").function("__pthread_testcancel") {
+process("/lib64/libc.so.6").function("__pthread_testcancel") !,
+process("/lib64/libc.so.6").function("pthread_testcancel") {
     if (pid() != target())
 	next;
 }
  */
 
 probe
-process("/lib64/libc.so.6").function("pthread_detach").return !,
-process("/lib64/libc.so.6").function("__pthread_detach").return {
+process("/lib64/libc.so.6").function("__pthread_detach").return !,
+process("/lib64/libc.so.6").function("pthread_detach").return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -456,8 +456,8 @@ process("/lib64/libc.so.6").function("__pthread_detach").return {
 }
 
 probe
-process("/lib64/libc.so.6").function("pthread_exit") !,
-process("/lib64/libc.so.6").function("__pthread_exit") {
+process("/lib64/libc.so.6").function("__pthread_exit") !,
+process("/lib64/libc.so.6").function("pthread_exit") {
     if (pid() != target())
 	next;
     thread = tid_to_thread[tid()];
@@ -468,8 +468,8 @@ process("/lib64/libc.so.6").function("__pthread_exit") {
 }
 
 probe
-process("/lib64/libc.so.6").function("pthread_join").return !,
-process("/lib64/libc.so.6").function("__pthread_join").return {
+process("/lib64/libc.so.6").function("__pthread_join").return !,
+process("/lib64/libc.so.6").function("pthread_join").return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -486,8 +486,8 @@ process("/lib64/libc.so.6").function("__pthread_join").return {
 }
 
 probe
-process("/lib64/libc.so.6").function("pthread_kill").return !,
-process("/lib64/libc.so.6").function("__pthread_kill").return {
+process("/lib64/libc.so.6").function("__pthread_kill").return !,
+process("/lib64/libc.so.6").function("pthread_kill").return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -500,8 +500,8 @@ process("/lib64/libc.so.6").function("__pthread_kill").return {
 }
 
 probe
-process("/lib64/libc.so.6").function("pthread_mutex_init").return !,
-process("/lib64/libc.so.6").function("__pthread_mutex_init").return {
+process("/lib64/libc.so.6").function("__pthread_mutex_init").return !,
+process("/lib64/libc.so.6").function("pthread_mutex_init").return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -537,8 +537,8 @@ function common_mutex_lock(mutex) {
 }
 
 probe
-process("/lib64/libc.so.6").function("pthread_mutex_trylock") !,
-process("/lib64/libc.so.6").function("__pthread_mutex_trylock") {
+process("/lib64/libc.so.6").function("__pthread_mutex_trylock") !,
+process("/lib64/libc.so.6").function("pthread_mutex_trylock") {
     if (pid() != target())
 	next;
     mutex = @ARG1;
@@ -546,8 +546,8 @@ process("/lib64/libc.so.6").function("__pthread_mutex_trylock") {
 }
 
 probe
-process("/lib64/libc.so.6").function("pthread_mutex_trylock").return !,
-process("/lib64/libc.so.6").function("__pthread_mutex_trylock").return {
+process("/lib64/libc.so.6").function("__pthread_mutex_trylock").return !,
+process("/lib64/libc.so.6").function("pthread_mutex_trylock").return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -565,8 +565,8 @@ process("/lib64/libc.so.6").function("__pthread_mutex_trylock").return {
 }
 
 probe
-process("/lib64/libc.so.6").function("pthread_mutex_timedlock") !,
-process("/lib64/libc.so.6").function("__pthread_mutex_timedlock") {
+process("/lib64/libc.so.6").function("__pthread_mutex_timedlock") !,
+process("/lib64/libc.so.6").function("pthread_mutex_timedlock") {
     if (pid() != target())
 	next;
     mutex = @ARG1;
@@ -576,8 +576,8 @@ process("/lib64/libc.so.6").function("__pthread_mutex_timedlock") {
 }
 
 probe
-process("/lib64/libc.so.6").function("pthread_mutex_timedlock").return !,
-process("/lib64/libc.so.6").function("__pthread_mutex_timedlock").return {
+process("/lib64/libc.so.6").function("__pthread_mutex_timedlock").return !,
+process("/lib64/libc.so.6").function("pthread_mutex_timedlock").return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -596,8 +596,8 @@ process("/lib64/libc.so.6").function("__pthread_mutex_timedlock").return {
 }
 
 probe
-process("/lib64/libc.so.6").function("pthread_mutex_lock") !,
-process("/lib64/libc.so.6").function("__pthread_mutex_lock") {
+process("/lib64/libc.so.6").function("__pthread_mutex_lock") !,
+process("/lib64/libc.so.6").function("pthread_mutex_lock") {
     if (pid() != target())
 	next;
     mutex = @ARG1;
@@ -605,8 +605,8 @@ process("/lib64/libc.so.6").function("__pthread_mutex_lock") {
 }
 
 probe
-process("/lib64/libc.so.6").function("pthread_mutex_lock").return !,
-process("/lib64/libc.so.6").function("__pthread_mutex_lock").return {
+process("/lib64/libc.so.6").function("__pthread_mutex_lock").return !,
+process("/lib64/libc.so.6").function("pthread_mutex_lock").return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -623,8 +623,8 @@ process("/lib64/libc.so.6").function("__pthread_mutex_lock").return {
 }
 
 probe
-process("/lib64/libc.so.6").function("pthread_mutex_consistent").return !,
-process("/lib64/libc.so.6").function("__pthread_mutex_consistent").return {
+process("/lib64/libc.so.6").function("__pthread_mutex_consistent").return !,
+process("/lib64/libc.so.6").function("pthread_mutex_consistent").return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -637,8 +637,8 @@ process("/lib64/libc.so.6").function("__pthread_mutex_consistent").return {
 
 
 probe
-process("/lib64/libc.so.6").function("pthread_mutex_getprioceiling").return !,
-process("/lib64/libc.so.6").function("__pthread_mutex_getprioceiling").return {
+process("/lib64/libc.so.6").function("__pthread_mutex_getprioceiling").return !,
+process("/lib64/libc.so.6").function("pthread_mutex_getprioceiling").return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -651,8 +651,8 @@ process("/lib64/libc.so.6").function("__pthread_mutex_getprioceiling").return {
 }
 
 probe
-process("/lib64/libc.so.6").function("pthread_mutex_setprioceiling").return !,
-process("/lib64/libc.so.6").function("__pthread_mutex_setprioceiling").return {
+process("/lib64/libc.so.6").function("__pthread_mutex_setprioceiling").return !,
+process("/lib64/libc.so.6").function("pthread_mutex_setprioceiling").return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -668,8 +668,8 @@ process("/lib64/libc.so.6").function("__pthread_mutex_setprioceiling").return {
 }
 
 probe
-process("/lib64/libc.so.6").function("pthread_mutex_unlock").return !,
-process("/lib64/libc.so.6").function("__pthread_mutex_unlock").return {
+process("/lib64/libc.so.6").function("__pthread_mutex_unlock").return !,
+process("/lib64/libc.so.6").function("pthread_mutex_unlock").return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -698,8 +698,8 @@ process("/lib64/libc.so.6").function("__pthread_mutex_unlock").return {
 }
 
 probe
-process("/lib64/libc.so.6").function("pthread_mutex_destroy").return !,
-process("/lib64/libc.so.6").function("__pthread_mutex_destroy").return {
+process("/lib64/libc.so.6").function("__pthread_mutex_destroy").return !,
+process("/lib64/libc.so.6").function("pthread_mutex_destroy").return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -713,8 +713,8 @@ process("/lib64/libc.so.6").function("__pthread_mutex_destroy").return {
 }
 
 probe
-process("/lib64/libc.so.6").function("pthread_cond_init").return !,
-process("/lib64/libc.so.6").function("__pthread_cond_init").return {
+process("/lib64/libc.so.6").function("__pthread_cond_init").return !,
+process("/lib64/libc.so.6").function("pthread_cond_init").return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -730,8 +730,8 @@ process("/lib64/libc.so.6").function("__pthread_cond_init").return {
 }
 
 probe
-process("/lib64/libc.so.6").function("pthread_cond_broadcast").return !,
-process("/lib64/libc.so.6").function("__pthread_cond_broadcast").return {
+process("/lib64/libc.so.6").function("__pthread_cond_broadcast").return !,
+process("/lib64/libc.so.6").function("pthread_cond_broadcast").return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -745,8 +745,8 @@ process("/lib64/libc.so.6").function("__pthread_cond_broadcast").return {
 }
 
 probe
-process("/lib64/libc.so.6").function("pthread_cond_signal").return !,
-process("/lib64/libc.so.6").function("__pthread_cond_signal").return {
+process("/lib64/libc.so.6").function("__pthread_cond_signal").return !,
+process("/lib64/libc.so.6").function("pthread_cond_signal").return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -830,8 +830,8 @@ process("/lib64/libc.so.6").function("pthread_cond_wait").return {
 }
 
 probe
-process("/lib64/libc.so.6").function("pthread_cond_timedwait") !,
-process("/lib64/libc.so.6").function("__pthread_cond_timedwait") {
+process("/lib64/libc.so.6").function("__pthread_cond_timedwait") !,
+process("/lib64/libc.so.6").function("pthread_cond_timedwait") {
     if (pid() != target())
 	next;
     cond  = @ARG1;
@@ -841,8 +841,8 @@ process("/lib64/libc.so.6").function("__pthread_cond_timedwait") {
 }
 
 probe
-process("/lib64/libc.so.6").function("pthread_cond_timedwait").return !,
-process("/lib64/libc.so.6").function("__pthread_cond_timedwait").return {
+process("/lib64/libc.so.6").function("__pthread_cond_timedwait").return !,
+process("/lib64/libc.so.6").function("pthread_cond_timedwait").return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -853,8 +853,8 @@ process("/lib64/libc.so.6").function("__pthread_cond_timedwait").return {
 }
 
 probe
-process("/lib64/libc.so.6").function("pthread_cond_destroy").return !,
-process("/lib64/libc.so.6").function("__pthread_cond_destroy").return {
+process("/lib64/libc.so.6").function("__pthread_cond_destroy").return !,
+process("/lib64/libc.so.6").function("pthread_cond_destroy").return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -869,8 +869,8 @@ process("/lib64/libc.so.6").function("__pthread_cond_destroy").return {
 
 
 probe
-process("/lib64/libc.so.6").function("pthread_rwlock_init").return !,
-process("/lib64/libc.so.6").function("__pthread_rwlock_init").return {
+process("/lib64/libc.so.6").function("__pthread_rwlock_init").return !,
+process("/lib64/libc.so.6").function("pthread_rwlock_init").return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -886,8 +886,8 @@ process("/lib64/libc.so.6").function("__pthread_rwlock_init").return {
 }
 
 probe
-process("/lib64/libc.so.6").function("pthread_rwlock_rdlock") !,
-process("/lib64/libc.so.6").function("__pthread_rwlock_rdlock") {
+process("/lib64/libc.so.6").function("__pthread_rwlock_rdlock") !,
+process("/lib64/libc.so.6").function("pthread_rwlock_rdlock") {
     if (pid() != target())
 	next;
     rwlock	= @ARG1;
@@ -895,8 +895,8 @@ process("/lib64/libc.so.6").function("__pthread_rwlock_rdlock") {
 }
 
 probe
-process("/lib64/libc.so.6").function("pthread_rwlock_rdlock").return !,
-process("/lib64/libc.so.6").function("__pthread_rwlock_rdlock").return {
+process("/lib64/libc.so.6").function("__pthread_rwlock_rdlock").return !,
+process("/lib64/libc.so.6").function("pthread_rwlock_rdlock").return {
     if (pid() != target())
 	next;
     result	= @RETURN;
@@ -913,8 +913,8 @@ process("/lib64/libc.so.6").function("__pthread_rwlock_rdlock").return {
 }
 
 probe
-process("/lib64/libc.so.6").function("pthread_rwlock_tryrdlock") !,
-process("/lib64/libc.so.6").function("__pthread_rwlock_tryrdlock") {
+process("/lib64/libc.so.6").function("__pthread_rwlock_tryrdlock") !,
+process("/lib64/libc.so.6").function("pthread_rwlock_tryrdlock") {
     if (pid() != target())
 	next;
     if (pid() != target())
@@ -924,8 +924,8 @@ process("/lib64/libc.so.6").function("__pthread_rwlock_tryrdlock") {
 }
 
 probe
-process("/lib64/libc.so.6").function("pthread_rwlock_tryrdlock").return !,
-process("/lib64/libc.so.6").function("__pthread_rwlock_tryrdlock").return {
+process("/lib64/libc.so.6").function("__pthread_rwlock_tryrdlock").return !,
+process("/lib64/libc.so.6").function("pthread_rwlock_tryrdlock").return {
     if (pid() != target())
 	next;
     result	= @RETURN;
@@ -942,8 +942,8 @@ process("/lib64/libc.so.6").function("__pthread_rwlock_tryrdlock").return {
 }
 
 probe
-process("/lib64/libc.so.6").function("pthread_rwlock_timedrdlock") !,
-process("/lib64/libc.so.6").function("__pthread_rwlock_timedrdlock") {
+process("/lib64/libc.so.6").function("__pthread_rwlock_timedrdlock") !,
+process("/lib64/libc.so.6").function("pthread_rwlock_timedrdlock") {
     if (pid() != target())
 	next;
     rwlock	= @ARG1;
@@ -953,8 +953,8 @@ process("/lib64/libc.so.6").function("__pthread_rwlock_timedrdlock") {
 }
 
 probe
-process("/lib64/libc.so.6").function("pthread_rwlock_timedrdlock").return !,
-process("/lib64/libc.so.6").function("__pthread_rwlock_timedrdlock").return {
+process("/lib64/libc.so.6").function("__pthread_rwlock_timedrdlock").return !,
+process("/lib64/libc.so.6").function("pthread_rwlock_timedrdlock").return {
     if (pid() != target())
 	next;
     result	= @RETURN;
@@ -976,8 +976,8 @@ process("/lib64/libc.so.6").function("__pthread_rwlock_timedrdlock").return {
 }
 
 probe
-process("/lib64/libc.so.6").function("pthread_rwlock_wrlock") !,
-process("/lib64/libc.so.6").function("__pthread_rwlock_wrlock") {
+process("/lib64/libc.so.6").function("__pthread_rwlock_wrlock") !,
+process("/lib64/libc.so.6").function("pthread_rwlock_wrlock") {
     if (pid() != target())
 	next;
     rwlock	= @ARG1;
@@ -985,8 +985,8 @@ process("/lib64/libc.so.6").function("__pthread_rwlock_wrlock") {
 }
 
 probe
-process("/lib64/libc.so.6").function("pthread_rwlock_wrlock").return !,
-process("/lib64/libc.so.6").function("__pthread_rwlock_wrlock").return {
+process("/lib64/libc.so.6").function("__pthread_rwlock_wrlock").return !,
+process("/lib64/libc.so.6").function("pthread_rwlock_wrlock").return {
     if (pid() != target())
 	next;
     result	= @RETURN;
@@ -1003,8 +1003,8 @@ process("/lib64/libc.so.6").function("__pthread_rwlock_wrlock").return {
 }
 
 probe
-process("/lib64/libc.so.6").function("pthread_rwlock_trywrlock") !,
-process("/lib64/libc.so.6").function("__pthread_rwlock_trywrlock") {
+process("/lib64/libc.so.6").function("__pthread_rwlock_trywrlock") !,
+process("/lib64/libc.so.6").function("pthread_rwlock_trywrlock") {
     if (pid() != target())
 	next;
     rwlock	= @ARG1;
@@ -1012,8 +1012,8 @@ process("/lib64/libc.so.6").function("__pthread_rwlock_trywrlock") {
 }
 
 probe
-process("/lib64/libc.so.6").function("pthread_rwlock_trywrlock").return !,
-process("/lib64/libc.so.6").function("__pthread_rwlock_trywrlock").return {
+process("/lib64/libc.so.6").function("__pthread_rwlock_trywrlock").return !,
+process("/lib64/libc.so.6").function("pthread_rwlock_trywrlock").return {
     if (pid() != target())
 	next;
     result	= @RETURN;
@@ -1031,8 +1031,8 @@ process("/lib64/libc.so.6").function("__pthread_rwlock_trywrlock").return {
 }
 
 probe
-process("/lib64/libc.so.6").function("pthread_rwlock_timedwrlock") !,
-process("/lib64/libc.so.6").function("__pthread_rwlock_timedwrlock") {
+process("/lib64/libc.so.6").function("__pthread_rwlock_timedwrlock") !,
+process("/lib64/libc.so.6").function("pthread_rwlock_timedwrlock") {
     if (pid() != target())
 	next;
     rwlock	= @ARG1;
@@ -1042,8 +1042,8 @@ process("/lib64/libc.so.6").function("__pthread_rwlock_timedwrlock") {
 }
 
 probe
-process("/lib64/libc.so.6").function("pthread_rwlock_timedwrlock").return !,
-process("/lib64/libc.so.6").function("__pthread_rwlock_timedwrlock").return {
+process("/lib64/libc.so.6").function("__pthread_rwlock_timedwrlock").return !,
+process("/lib64/libc.so.6").function("pthread_rwlock_timedwrlock").return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -1063,8 +1063,8 @@ process("/lib64/libc.so.6").function("__pthread_rwlock_timedwrlock").return {
 }
 
 probe
-process("/lib64/libc.so.6").function("pthread_rwlock_unlock").return !,
-process("/lib64/libc.so.6").function("__pthread_rwlock_unlock").return {
+process("/lib64/libc.so.6").function("__pthread_rwlock_unlock").return !,
+process("/lib64/libc.so.6").function("pthread_rwlock_unlock").return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -1083,8 +1083,8 @@ process("/lib64/libc.so.6").function("__pthread_rwlock_unlock").return {
 
 
 probe
-process("/lib64/libc.so.6").function("pthread_rwlock_destroy").return !,
-process("/lib64/libc.so.6").function("__pthread_rwlock_destroy").return {
+process("/lib64/libc.so.6").function("__pthread_rwlock_destroy").return !,
+process("/lib64/libc.so.6").function("pthread_rwlock_destroy").return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -1097,8 +1097,8 @@ process("/lib64/libc.so.6").function("__pthread_rwlock_destroy").return {
 }
 
 probe
-process("/lib64/libc.so.6").function("pthread_spin_init").return !,
-process("/lib64/libc.so.6").function("__pthread_spin_init").return {
+process("/lib64/libc.so.6").function("__pthread_spin_init").return !,
+process("/lib64/libc.so.6").function("pthread_spin_init").return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -1114,8 +1114,8 @@ process("/lib64/libc.so.6").function("__pthread_spin_init").return {
 }
 
 probe
-process("/lib64/libc.so.6").function("pthread_spin_lock") !,
-process("/lib64/libc.so.6").function("__pthread_spin_lock") {
+process("/lib64/libc.so.6").function("__pthread_spin_lock") !,
+process("/lib64/libc.so.6").function("pthread_spin_lock") {
     if (pid() != target())
 	next;
     spin	= @ARG1;
@@ -1123,8 +1123,8 @@ process("/lib64/libc.so.6").function("__pthread_spin_lock") {
 }
 
 probe
-process("/lib64/libc.so.6").function("pthread_spin_lock").return !,
-process("/lib64/libc.so.6").function("__pthread_spin_lock").return {
+process("/lib64/libc.so.6").function("__pthread_spin_lock").return !,
+process("/lib64/libc.so.6").function("pthread_spin_lock").return {
     if (pid() != target())
 	next;
     result	= @RETURN;
@@ -1141,8 +1141,8 @@ process("/lib64/libc.so.6").function("__pthread_spin_lock").return {
 }
 
 probe
-process("/lib64/libc.so.6").function("pthread_spin_trylock") !,
-process("/lib64/libc.so.6").function("__pthread_spin_trylock") {
+process("/lib64/libc.so.6").function("__pthread_spin_trylock") !,
+process("/lib64/libc.so.6").function("pthread_spin_trylock") {
     if (pid() != target())
 	next;
     spin	= @ARG1;
@@ -1150,8 +1150,8 @@ process("/lib64/libc.so.6").function("__pthread_spin_trylock") {
 }
 
 probe
-process("/lib64/libc.so.6").function("pthread_spin_trylock").return !,
-process("/lib64/libc.so.6").function("__pthread_spin_trylock").return {
+process("/lib64/libc.so.6").function("__pthread_spin_trylock").return !,
+process("/lib64/libc.so.6").function("pthread_spin_trylock").return {
     if (pid() != target())
 	next;
     result	= @RETURN;
@@ -1169,8 +1169,8 @@ process("/lib64/libc.so.6").function("__pthread_spin_trylock").return {
 }
 
 probe
-process("/lib64/libc.so.6").function("pthread_spin_unlock").return !,
-process("/lib64/libc.so.6").function("__pthread_spin_unlock").return {
+process("/lib64/libc.so.6").function("__pthread_spin_unlock").return !,
+process("/lib64/libc.so.6").function("pthread_spin_unlock").return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -1185,8 +1185,8 @@ process("/lib64/libc.so.6").function("__pthread_spin_unlock").return {
 }
 
 probe
-process("/lib64/libc.so.6").function("pthread_spin_destroy").return !,
-process("/lib64/libc.so.6").function("__pthread_spin_destroy").return {
+process("/lib64/libc.so.6").function("__pthread_spin_destroy").return !,
+process("/lib64/libc.so.6").function("pthread_spin_destroy").return {
     if (pid() != target())
 	next;
     result = @RETURN;
