@@ -219,6 +219,11 @@ global report_mutex_count = 10;
 /* Number of detailed conditions to report; sorted by total wait time. */
 global report_cond_count = 10;
 
+/* Number of detailed read rwlocks to report; sorted by total wait time. */
+global report_rdlock_count = 10;
+/* Number of detailed write rwlocks to report; sorted by total wait time. */
+global report_wrlock_count = 10;
+
 private global tid_to_thread;
 private global thread_to_tid;
 private global thread_name;
@@ -281,6 +286,29 @@ private global rdlocks;
 private global wrlock_entry;
 private global wrlock_entry_timer;
 private global wrlocks;
+
+private global rdlock_count;
+private global rdlock_contention_total_time;
+private global rdlock_contention_min_time;
+private global rdlock_contention_max_time;
+private global rdlock_contention_count;
+private global rdlock_contention_per_thread;
+private global rdlock_contention_fail_try;
+private global rdlock_contention_fail_timed;
+private global rdlock_total_time;
+private global rdlock_min_time;
+private global rdlock_max_time;
+private global wrlock_count;
+private global wrlock_contention_total_time;
+private global wrlock_contention_min_time;
+private global wrlock_contention_max_time;
+private global wrlock_contention_count;
+private global wrlock_contention_per_thread;
+private global wrlock_contention_fail_try;
+private global wrlock_contention_fail_timed;
+private global wrlock_total_time;
+private global wrlock_min_time;
+private global wrlock_max_time;
 
 private global spin_init;
 private global spin_entry;
@@ -892,6 +920,40 @@ process("/lib64/libc.so.6").function("pthread_rwlock_init").return {
 	report_error(ppfunc(), result);
 }
 
+function common_rdlock(rdlock, istry, tmout, result) {
+    if (result == 0) {
+	rdlocks[rdlock] = tid();
+	now = gettimeofday_us();
+	if (verbose) {
+	    ++rdlock_count[rdlock];
+	    diff = now - rdlock_entry[tid(), rdlock];
+	    rdlock_contention_total_time[rdlock] += diff;
+	    if (!rdlock_contention_min_time[rdlock] ||
+		rdlock_contention_min_time[rdlock] > diff)
+		rdlock_contention_min_time[rdlock] = diff;
+	    if (rdlock_contention_max_time[rdlock] < diff)
+		rdlock_contention_max_time[rdlock] = diff;
+	    ++rdlock_contention_count[rdlock];
+	    ++rdlock_contention_per_thread[tid(), rdlock];
+	}
+	rdlock_entry[tid(), rdlock] = now;
+    }
+    else {
+	report = 1;
+	if (istry && result == @EBUSY)
+	    report = trap_on_expected_busy;
+	else if (tmout && result == @ETIMEDOUT) {
+	    ++rdlock_contention_fail_timed[rdlock];
+	    report = trap_on_expected_timedout;
+	}
+	if (report)
+	    report_error(ppfunc(), result);
+	delete rdlock_entry[tid(), rdlock];
+	if (tmout)
+	    delete rdlock_entry_timer[tid(), rdlock];
+    }
+}
+
 probe
 process("/lib64/libc.so.6").function("__pthread_rwlock_rdlock") !,
 process("/lib64/libc.so.6").function("pthread_rwlock_rdlock") {
@@ -908,22 +970,12 @@ process("/lib64/libc.so.6").function("pthread_rwlock_rdlock").return {
 	next;
     result	= @RETURN;
     rwlock	= @ENTRY_ARG1;
-    if (result == 0) {
-	rdlocks[rwlock] = tid();
-	/* Update to lock timestamp, not attempt to get lock */
-	rdlock_entry[tid(), rwlock] = gettimeofday_us();
-    }
-    else {
-	report_error(ppfunc(), result);
-	rdlock_entry[tid(), rwlock] = -1;
-    }
+    common_rdlock(rwlock, 0, 0, result);
 }
 
 probe
 process("/lib64/libc.so.6").function("__pthread_rwlock_tryrdlock") !,
 process("/lib64/libc.so.6").function("pthread_rwlock_tryrdlock") {
-    if (pid() != target())
-	next;
     if (pid() != target())
 	next;
     rwlock	= @ARG1;
@@ -937,21 +989,13 @@ process("/lib64/libc.so.6").function("pthread_rwlock_tryrdlock").return {
 	next;
     result	= @RETURN;
     rwlock	= @ENTRY_ARG1;
-    if (result == 0) {
-	rdlocks[rwlock] = tid();
-	/* Update to lock timestamp, not attempt to get lock */
-	rdlock_entry[tid(), rwlock] = gettimeofday_us();
-    }
-    else {
-	report_error(ppfunc(), result);
-	rdlock_entry[tid(), rwlock] = -1;
-    }
+    common_rdlock(rwlock, 1, 0, result);
 }
 
 probe
 process("/lib64/libc.so.6").function("__pthread_rwlock_timedrdlock") !,
 process("/lib64/libc.so.6").function("pthread_rwlock_timedrdlock") {
-    if (pid() != target())
+	if (pid() != target())
 	next;
     rwlock	= @ARG1;
     tmout	= @ARG2;
@@ -966,19 +1010,41 @@ process("/lib64/libc.so.6").function("pthread_rwlock_timedrdlock").return {
 	next;
     result	= @RETURN;
     rwlock	= @ENTRY_ARG1;
+    tmout	= @ENTRY_ARG2;
+    common_rdlock(rwlock, 0, tmout, result);
+}
+
+function common_wrlock(wrlock, istry, tmout, result) {
     if (result == 0) {
-	/*
-	tmout	= @ENTRY_ARG2;
-	 */
-	rdlocks[rwlock] = tid();
-	/* Update to lock timestamp, not attempt to get lock */
-	rdlock_entry[tid(), rwlock] = gettimeofday_us();
+	wrlocks[wrlock] = tid();
+	now = gettimeofday_us();
+	if (verbose) {
+	    ++wrlock_count[wrlock];
+	    diff = now - wrlock_entry[tid(), wrlock];
+	    wrlock_contention_total_time[wrlock] += diff;
+	    if (!wrlock_contention_min_time[wrlock] ||
+		wrlock_contention_min_time[wrlock] > diff)
+		wrlock_contention_min_time[wrlock] = diff;
+	    if (wrlock_contention_max_time[wrlock] < diff)
+		wrlock_contention_max_time[wrlock] = diff;
+	    ++wrlock_contention_count[wrlock];
+	    ++wrlock_contention_per_thread[tid(), wrlock];
+	}
+	wrlock_entry[tid(), wrlock] = now;
     }
     else {
-	if (!trap_on_expected_timedout || result != @ETIMEDOUT)
+	report = 1;
+	if (istry && result == @EBUSY)
+	    report = trap_on_expected_busy;
+	else if (tmout && result == @ETIMEDOUT) {
+	    ++wrlock_contention_fail_timed[wrlock];
+	    report = trap_on_expected_timedout;
+	}
+	if (report)
 	    report_error(ppfunc(), result);
-	rdlock_entry[tid(), rwlock] = -1;
-	rdlock_entry_timer[tid(), rwlock] = 0;
+	delete wrlock_entry[tid(), wrlock];
+	if (tmout)
+	    delete wrlock_entry_timer[tid(), wrlock];
     }
 }
 
@@ -998,15 +1064,7 @@ process("/lib64/libc.so.6").function("pthread_rwlock_wrlock").return {
 	next;
     result	= @RETURN;
     rwlock	= @ENTRY_ARG1;
-    if (result == 0) {
-	wrlocks[rwlock] = tid();
-	/* Update to lock timestamp, not attempt to get lock */
-	wrlock_entry[tid(), rwlock] = gettimeofday_us();
-    }
-    else {
-	report_error(ppfunc(), result);
-	wrlock_entry[tid(), rwlock] = -1;
-    }
+    common_wrlock(rwlock, 0, 0, result);
 }
 
 probe
@@ -1025,16 +1083,7 @@ process("/lib64/libc.so.6").function("pthread_rwlock_trywrlock").return {
 	next;
     result	= @RETURN;
     rwlock	= @ENTRY_ARG1;
-    if (result == 0) {
-	wrlocks[rwlock] = tid();
-	/* Update to lock timestamp, not attempt to get lock */
-	wrlock_entry[tid(), rwlock] = gettimeofday_us();
-    }
-    else {
-	if (!trap_on_expected_busy || result != @EBUSY)
-	    report_error(ppfunc(), result);
-	wrlock_entry[tid(), rwlock] = -1;
-    }
+    common_wrlock(rwlock, 1, 0, result);
 }
 
 probe
@@ -1054,19 +1103,9 @@ process("/lib64/libc.so.6").function("pthread_rwlock_timedwrlock").return {
     if (pid() != target())
 	next;
     result = @RETURN;
-    if (result == 0) {
-	rwlock	= @ENTRY_ARG1;
-	/*
-	tmout	= @ENTRY_ARG2;
-	 */
-	wrlocks[rwlock] = tid();
-    }
-    else {
-	if (!trap_on_expected_timedout || result != @ETIMEDOUT)
-	    report_error(ppfunc(), result);
-	wrlock_entry[tid(), rwlock] = -1;
-	wrlock_entry_timer[tid(), rwlock] = 0;
-    }
+    rwlock	= @ENTRY_ARG1;
+    tmout	= @ENTRY_ARG2;
+    common_wrlock(rwlock, 0, tmout, result);
 }
 
 probe
@@ -1080,14 +1119,56 @@ process("/lib64/libc.so.6").function("pthread_rwlock_unlock").return {
 	if (wrlocks[rwlock])
 	    /* assert(wrlocks[rwlock] == tid() */
 	    delete wrlocks[rwlock];
-	if (rdlocks[rwlock])
-	    /* assert(rdlocks[rwlock] == tid() */
-	    delete rdlocks[rwlock];
+	if (wrlocks[rwlock])
+	    /* assert(wrlocks[rwlock] == tid() */
+	    delete wrlocks[rwlock];
     }
     else
 	report_error(ppfunc(), result);
-}
 
+
+    if (pid() != target())
+	next;
+    result = @RETURN;
+    rwlock = @ENTRY_ARG1;
+    rd = rdlocks[rwlock];
+    if (result)
+	report_error(ppfunc(), result);
+    else {
+	if (verbose) {
+	    --wrlock_count[rwlock];
+	    now = gettimeofday_us();
+	    if (rd) {
+		diff = now - rdlock_entry[tid(), rwlock];
+		rdlock_total_time[rwlock] += diff;
+		if (!rdlock_min_time[rwlock] ||
+		    rdlock_min_time[rwlock] > diff)
+		    rdlock_min_time[rwlock] = diff;
+		if (rdlock_max_time[rwlock] < diff)
+		    rdlock_max_time[rwlock] = diff;
+	    }
+	    else {
+		diff = now - wrlock_entry[tid(), rwlock];
+		wrlock_total_time[rwlock] += diff;
+		if (!wrlock_min_time[rwlock] ||
+		    wrlock_min_time[rwlock] > diff)
+		    wrlock_min_time[rwlock] = diff;
+		if (wrlock_max_time[rwlock] < diff)
+		    wrlock_max_time[rwlock] = diff;
+	    }
+	}
+    }
+    if (rd) {
+	delete rdlocks[rwlock];
+	delete rdlock_entry[tid(), rwlock];
+	delete rdlock_entry_timer[tid(), rwlock];
+    }
+    else {
+	delete wrlocks[rwlock];
+	delete wrlock_entry[tid(), rwlock];
+	delete wrlock_entry_timer[tid(), rwlock];
+    }
+}
 
 probe
 process("/lib64/libc.so.6").function("__pthread_rwlock_destroy").return !,
@@ -1439,25 +1520,60 @@ function report() {
     delete details;
     delete conditions;
 
-    foreach (wrlock in wrlocks) {
-	tid = wrlocks[wrlock];
-	if (tid)
-	    details[wrlock, now - wrlock_entry[tid, wrlock]] = tid;
-    }
-    foreach ([wrlock, time-] in details) {
-	if (rwlock_init[wrlock])
-	    printf("%s ",
-		   rwlock_init[wrlock] > 0 ? "initialized" : "*destroyed");
-	locker = wrlocks[wrlock];
-	printf("rwlock write lock %p by %ld\n", wrlock, locker);
-	foreach ([tid, key] in wrlock_entry) {
-	    if (key == wrlock && tid != locker && wrlock_entry[tid, key])
-		printf("    tid %ld waiting for %s\n", tid,
-		       time_string(now - wrlock_entry[tid, key]));
+    if (verbose) {
+	count = 0;
+	foreach ([tid, rdlock] in rdlock_contention_per_thread) {
+	    ++details_thread_count[rdlock];
 	}
+	foreach (rdlock in rdlock_contention_total_time) {
+	    details[rdlock, rdlock_contention_total_time[rdlock]] =
+		details_thread_count[rdlock];
+	}
+	delete details_thread_count;
+	foreach ([rdlock, time-] in details) {
+	    if (rdlock_contention_count[rdlock]) {
+		if (count++ >= report_rdlock_count)
+		    break;
+		if (rwlock_init[rdlock])
+		    printf("%s ",
+			   rwlock_init[rdlock] > 0 ?
+			   "initialized" : "*destroyed");
+		printf("rdlock %p locked %ld time%s by %ld thread%s",
+		       rdlock,
+		       rdlock_contention_count[rdlock],
+		       plural(rdlock_contention_count[rdlock]),
+		       details[rdlock, time],
+		       plural(details[rdlock, time]));
+		if (rdlock_contention_fail_try[rdlock])
+		    printf(", %ld failed lock%s",
+			   rdlock_contention_fail_try[rdlock],
+			   plural(rdlock_contention_fail_try[rdlock]));
+		if (rdlock_contention_fail_timed[rdlock])
+		    printf(", %ld timedout lock%s",
+			   rdlock_contention_fail_timed[rdlock],
+			   plural(rdlock_contention_fail_timed[rdlock]));
+		printf("\n");
+		printf("    total contention	: %s\n", time_string(time));
+		printf("    min contention	: %s\n",
+		       time_string(rdlock_contention_min_time[rdlock]));
+		printf("    max contention	: %s\n",
+		       time_string(rdlock_contention_max_time[rdlock]));
+		printf("    average contention	: %s\n",
+		       time_string(rdlock_contention_total_time[rdlock] /
+				   rdlock_contention_count[rdlock]));
+		printf("    total lock		: %s\n",
+		       time_string(rdlock_total_time[rdlock]));
+		printf("    min lock		: %s\n",
+		       time_string(rdlock_min_time[rdlock]));
+		printf("    max lock		: %s\n",
+		       time_string(rdlock_max_time[rdlock]));
+		printf("    average lock	: %s\n",
+		       time_string(rdlock_total_time[rdlock] /
+				   rdlock_contention_count[rdlock]));
+	    }
+	}
+	delete details;
     }
-    delete details;
-
     foreach (rdlock in rdlocks) {
 	tid = rdlocks[rdlock];
 	if (tid)
@@ -1477,6 +1593,75 @@ function report() {
     }
     delete details;
 
+    if (verbose) {
+	count = 0;
+	foreach ([tid, wrlock] in wrlock_contention_per_thread) {
+	    ++details_thread_count[wrlock];
+	}
+	foreach (wrlock in wrlock_contention_total_time) {
+	    details[wrlock, wrlock_contention_total_time[wrlock]] =
+		details_thread_count[wrlock];
+	}
+	delete details_thread_count;
+	foreach ([wrlock, time-] in details) {
+	    if (wrlock_contention_count[wrlock]) {
+		if (count++ >= report_wrlock_count)
+		    break;
+		if (rwlock_init[wrlock])
+		    printf("%s ",
+			   rwlock_init[wrlock] > 0 ?
+			   "initialized" : "*destroyed");
+		printf("wrlock %p locked %ld time%s by %ld thread%s",
+		       wrlock,
+		       wrlock_contention_count[wrlock],
+		       plural(wrlock_contention_count[wrlock]),
+		       details[wrlock, time],
+		       plural(details[wrlock, time]));
+		if (wrlock_contention_fail_try[wrlock])
+		    printf(", %ld failed lock%s",
+			   wrlock_contention_fail_try[wrlock],
+			   plural(wrlock_contention_fail_try[wrlock]));
+		printf("\n");
+		printf("    total contention	: %s\n", time_string(time));
+		printf("    min contention	: %s\n",
+		       time_string(wrlock_contention_min_time[wrlock]));
+		printf("    max contention	: %s\n",
+		       time_string(wrlock_contention_max_time[wrlock]));
+		printf("    average contention	: %s\n",
+		       time_string(wrlock_contention_total_time[wrlock] /
+				   wrlock_contention_count[wrlock]));
+		printf("    total lock		: %s\n",
+		       time_string(wrlock_total_time[wrlock]));
+		printf("    min lock		: %s\n",
+		       time_string(wrlock_min_time[wrlock]));
+		printf("    max lock		: %s\n",
+		       time_string(wrlock_max_time[wrlock]));
+		printf("    average lock	: %s\n",
+		       time_string(wrlock_total_time[wrlock] /
+				   wrlock_contention_count[wrlock]));
+	    }
+	}
+	delete details;
+    }
+    foreach (wrlock in wrlocks) {
+	tid = wrlocks[wrlock];
+	if (tid)
+	    details[wrlock, now - wrlock_entry[tid, wrlock]] = tid;
+    }
+    foreach ([wrlock, time-] in details) {
+	if (rwlock_init[wrlock])
+	    printf("%s ",
+		   rwlock_init[wrlock] > 0 ? "initialized" : "*destroyed");
+	locker = wrlocks[wrlock];
+	printf("rwlock write lock %p by %ld\n", wrlock, locker);
+	foreach ([tid, key] in wrlock_entry) {
+	    if (key == wrlock && tid != locker && wrlock_entry[tid, key])
+		printf("    tid %ld waiting for %s\n", tid,
+		       time_string(now - wrlock_entry[tid, key]));
+	}
+    }
+    delete details;
+
     foreach (spin in spinlocks) {
 	tid = spinlocks[spin];
 	if (tid)
@@ -1487,7 +1672,7 @@ function report() {
 	    printf("%s ",
 		   spin_init[spin] > 0 ? "initialized" : "*destroyed");
 	locker = spinlocks[spin];
-	printf("spinlock %p by %ld\n", rdlock, locker);
+	printf("spinlock %p by %ld\n", spin, locker);
 	foreach ([tid, key] in spin_entry) {
 	    if (key == spin && tid != locker && spin_entry[tid, key])
 		printf("    tid %ld waiting for %s\n", tid,
@@ -1546,6 +1731,28 @@ function reset() {
 	delete cond_signal_per_thread;
 	delete cond_broadcast_count;
 	delete cond_broadcast_per_thread;
+	delete rdlock_count;
+	delete rdlock_contention_total_time;
+	delete rdlock_contention_min_time;
+	delete rdlock_contention_max_time;
+	delete rdlock_contention_count;
+	delete rdlock_contention_per_thread;
+	delete rdlock_contention_fail_try;
+	delete rdlock_contention_fail_timed;
+	delete rdlock_total_time;
+	delete rdlock_min_time;
+	delete rdlock_max_time;
+	delete wrlock_count;
+	delete wrlock_contention_total_time;
+	delete wrlock_contention_min_time;
+	delete wrlock_contention_max_time;
+	delete wrlock_contention_count;
+	delete wrlock_contention_per_thread;
+	delete wrlock_contention_fail_try;
+	delete wrlock_contention_fail_timed;
+	delete wrlock_total_time;
+	delete wrlock_min_time;
+	delete wrlock_max_time;
     }
     delete mutex_lock;
     delete mutex_lock_entry;
