@@ -1281,15 +1281,20 @@ function report() {
 	    if (mutex_contention_count[mutex]) {
 		if (count++ >= report_mutex_count)
 		    break;
-		printf("mutex %p locked %ld times by %ld threads",
-		       mutex, mutex_contention_count[mutex],
-		       details[mutex, time]);
+		printf("mutex %p locked %ld time%s by %ld thread%s",
+		       mutex,
+		       mutex_contention_count[mutex],
+		       plural(mutex_contention_count[mutex]),
+		       details[mutex, time],
+		       plural(details[mutex, time]));
 		if (mutex_contention_fail_try[mutex])
-		    printf(", %ld failed locks",
-			   mutex_contention_fail_try[mutex]);
+		    printf(", %ld failed lock%s",
+			   mutex_contention_fail_try[mutex],
+			   plural(mutex_contention_fail_try[mutex]));
 		if (mutex_contention_fail_timed[mutex])
-		    printf(", %ld timedout locks",
-			   mutex_contention_fail_timed[mutex]);
+		    printf(", %ld timedout lock%s",
+			   mutex_contention_fail_timed[mutex],
+			   plural(mutex_contention_fail_timed[mutex]));
 		printf("\n");
 		printf("    total contention	: %s\n", time_string(time));
 		printf("    min contention	: %s\n",
@@ -1352,9 +1357,12 @@ function report() {
 	foreach ([cond, time-] in details) {
 	    if (count++ >= report_cond_count)
 		break;
-	    printf("condition %p waited %ld times by %ld threads",
-		   cond, cond_wait_count[cond],
-		   details[cond, time]);
+	    printf("condition %p waited %ld time%s by %ld thread%s",
+		   cond,
+		   cond_wait_count[cond],
+		   plural(cond_wait_count[cond]),
+		   details[cond, time],
+		   plural(details[cond, time]));
 		if (cond_wait_timedout[cond])
 		    printf(", %ld timedout waits",
 			   cond_wait_timedout[cond]);
