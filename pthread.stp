@@ -1281,6 +1281,15 @@ function report() {
 	    if (mutex_contention_count[mutex]) {
 		if (count++ >= report_mutex_count)
 		    break;
+		if (mutex_init[mutex])
+		    printf("%s ",
+			   mutex_init[mutex] > 0 ?
+			   "initialized" : "*destroyed");
+		if (mutex_consistent[mutex])
+		    printf("%sconsistent ",
+			   mutex_consistent[mutex] < 0 ? "*in" : "");
+		if (mutex_prioceiling[mutex])
+		    printf("%ld prioceiling ", mutex_prioceiling[mutex]);
 		printf("mutex %p locked %ld time%s by %ld thread%s",
 		       mutex,
 		       mutex_contention_count[mutex],
@@ -1357,6 +1366,8 @@ function report() {
 	foreach ([cond, time-] in details) {
 	    if (count++ >= report_cond_count)
 		break;
+	    printf("%s ",
+		   cond_init[cond] > 0 ? "initialized" : "*destroyed");
 	    printf("condition %p waited %ld time%s by %ld thread%s",
 		   cond,
 		   cond_wait_count[cond],
