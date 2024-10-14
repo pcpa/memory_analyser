@@ -216,6 +216,9 @@ global verbose = 0;
  * well as too much noise in output.  */
 global report_mutex_count = 10;
 
+/* Number of detailed conditions to report; sorted by total wait time. */
+global report_cond_count = 10;
+
 private global tid_to_thread;
 private global thread_to_tid;
 private global thread_name;
@@ -253,6 +256,19 @@ private global mutex_wait;
 private global cond_wait;
 private global cond_wait_timer;
 private global cond_init;
+
+/* Count of successful cond wait calls */
+private global cond_wait_count;
+/* Count of successful cond wait calls per thread */
+private global cond_wait_per_thread;
+/* Sum of total time waiting for a condition by all threads */
+private global cond_wait_total_time;
+/* Minimum time waiting for a condition by all threads */
+private global cond_wait_min_time;
+/* Maximum time waiting for a condition by all threads */
+private global cond_wait_max_time;
+/* Number of failed timed_cond_wait */
+private global cond_wait_timedout;
 
 private global rwlock_init;
 private global rdlock_entry;
@@ -743,32 +759,74 @@ process("/lib64/libc.so.6").function("__pthread_cond_signal").return {
 	report_error(ppfunc(), result);
 }
 
+function
+common_cond_wait_call(cond, mutex, tmout) {
+    cond_wait[tid(), cond] = gettimeofday_us();
+    if (tmout)
+	cond_wait_timer[tid(), cond] = tmout;
+    if (verbose > 1) {
+	/* Expensive check */
+	foreach ([tid, key] in mutex_wait) {
+	    value = mutex_wait[tid, key];
+	    if (key == cond && value != mutex) {
+		printf("Multiple mutexes used on call to pthead_cond_wait, "
+		       " prevously %p and now %p\n", value, mutex);
+		print_ubacktrace();
+		break;
+	    }
+	}
+    }
+    mutex_wait[tid(), cond] = mutex;
+}
+
+function
+common_cond_wait_return(cond, mutex, tmout, result) {
+    report = !!result;
+    if (result) {
+	if (tmout && result == @ETIMEDOUT) {
+	    ++cond_wait_timedout[cond];
+	    report = trap_on_expected_timedout;
+	}
+	if (report)
+	    report_error(ppfunc(), result);
+    }
+    if (verbose) {
+	now = gettimeofday_us();
+	diff = now - cond_wait[tid(), cond];
+	++cond_wait_count[cond];
+	cond_wait_total_time[cond] += diff;
+	if (!cond_wait_min_time[cond] || cond_wait_min_time[cond] > diff)
+	    cond_wait_min_time[cond] = diff;
+	if (cond_wait_max_time[cond] < diff)
+	    cond_wait_max_time[cond] = diff;
+	if (!report)
+	    ++cond_wait_per_thread[tid(), cond];
+    }
+    delete cond_wait[tid(), cond];
+    delete mutex_wait[tid(), cond];
+    if (tmout)
+	delete cond_wait_timer[tid(), cond];
+}
+
 probe
-process("/lib64/libc.so.6").function("pthread_cond_wait") !,
-process("/lib64/libc.so.6").function("___pthread_cond_wait")
-{
+process("/lib64/libc.so.6").function("___pthread_cond_wait") !,
+process("/lib64/libc.so.6").function("pthread_cond_wait") {
     if (pid() != target())
 	next;
     cond  = @ARG1;
     mutex = @ARG2;
-    cond_wait[tid(), cond] = gettimeofday_us();
-    mutex_wait[tid(), cond] = mutex;
+    common_cond_wait_call(cond, mutex, 0);
 }
 
 probe
-process("/lib64/libc.so.6").function("pthread_cond_wait").return !,
-process("/lib64/libc.so.6").function("___pthread_cond_wait").return {
+process("/lib64/libc.so.6").function("___pthread_cond_wait").return !,
+process("/lib64/libc.so.6").function("pthread_cond_wait").return {
     if (pid() != target())
 	next;
     result = @RETURN;
     cond  = @ENTRY_ARG1;
-    /*
     mutex = @ENTRY_ARG2;
-     */
-    if (result)
-	report_error(ppfunc(), result);
-    cond_wait[tid(), cond] = 0;
-    mutex_wait[tid(), cond] = 0;
+    common_cond_wait_return(cond, mutex, 0, result);
 }
 
 probe
@@ -779,9 +837,7 @@ process("/lib64/libc.so.6").function("__pthread_cond_timedwait") {
     cond  = @ARG1;
     mutex = @ARG2;
     tmout = @ARG3;
-    cond_wait[tid(), cond] = gettimeofday_us();
-    mutex_wait[tid(), cond] = mutex;
-    cond_wait_timer[tid(), cond] = tmout;
+    common_cond_wait_call(cond, mutex, tmout);
 }
 
 probe
@@ -791,14 +847,9 @@ process("/lib64/libc.so.6").function("__pthread_cond_timedwait").return {
 	next;
     result = @RETURN;
     cond  = @ENTRY_ARG1;
-    /*
     mutex = @ENTRY_ARG2;
-     */
-    if (result && (!trap_on_expected_timedout || result != @ETIMEDOUT))
-	report_error(ppfunc(), result);
-    cond_wait[tid(), cond] = 0;
-    mutex_wait[tid(), cond] = 0;
-    cond_wait_timer[tid(), cond] = 0;
+    tmout = @ENTRY_ARG3;
+    common_cond_wait_return(cond, mutex, tmout, result);
 }
 
 probe
@@ -1288,6 +1339,38 @@ function report() {
     }
     delete details;
 
+    if (verbose) {
+	count = 0;
+	foreach ([tid, cond] in cond_wait_per_thread) {
+	    ++details_thread_count[cond];
+	}
+	foreach (cond in cond_wait_total_time) {
+	    details[cond, cond_wait_total_time[cond]] =
+		details_thread_count[cond];
+	}
+	delete details_thread_count;
+	foreach ([cond, time-] in details) {
+	    if (count++ >= report_cond_count)
+		break;
+	    printf("condition %p waited %ld times by %ld threads",
+		   cond, cond_wait_count[cond],
+		   details[cond, time]);
+		if (cond_wait_timedout[cond])
+		    printf(", %ld timedout waits",
+			   cond_wait_timedout[cond]);
+		printf("\n");
+		printf("    total wait	: %s\n", time_string(time));
+		printf("    min wait	: %s\n",
+		       time_string(cond_wait_min_time[cond]));
+		printf("    max wait	: %s\n",
+		       time_string(cond_wait_max_time[cond]));
+		printf("    average wait: %s\n",
+		       time_string(cond_wait_total_time[cond] /
+				   cond_wait_count[cond]));
+	}
+	delete details;
+    }
+
     foreach ([tid, cond] in cond_wait) {
 	if (cond_wait[tid, cond]) {
 	    conditions[cond] = 1;
@@ -1407,6 +1490,12 @@ function reset() {
 	delete mutex_lock_total_time;
 	delete mutex_lock_min_time;
 	delete mutex_lock_max_time;
+	delete cond_wait_count;
+	delete cond_wait_per_thread;
+	delete cond_wait_total_time;
+	delete cond_wait_min_time;
+	delete cond_wait_max_time;
+	delete cond_wait_timedout;
     }
     delete mutex_lock;
     delete mutex_lock_entry;
