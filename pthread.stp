@@ -211,6 +211,9 @@ global trap_on_expected_busy = 0;
 global trap_on_expected_timedout = 0;
 
 global verbose = 0;
+
+global expensive_checks = 0;
+
 /* Number of detailed mutexes to report; sorted by total contention time.
  * This option is added to avoid too large N vale for -DMAX_ACTIONS=N as
  * well as too much noise in output.  */
@@ -564,23 +567,42 @@ process("/lib64/libc.so.6").function("pthread_mutex_init").return {
 	report_error(ppfunc(), result);
 }
 
-function common_mutex_lock(mutex) {
-    if ((++mutex_lock_count[mutex]) == 1) {
-	mutex_lock[mutex] = tid();
-	now = gettimeofday_us();
-	if (verbose) {
-	    diff = now - mutex_lock_entry[tid(), mutex];
-	    mutex_contention_total_time[mutex] += diff;
-	    if (!mutex_contention_min_time[mutex] ||
-		mutex_contention_min_time[mutex] > diff)
-		mutex_contention_min_time[mutex] = diff;
-	    if (mutex_contention_max_time[mutex] < diff)
-		mutex_contention_max_time[mutex] = diff;
-	    ++mutex_contention_count[mutex];
-	    ++mutex_contention_per_thread[tid(), mutex];
+function common_mutex_lock(mutex, istry, tmout, result) {
+    if (result == 0) {
+	if ((++mutex_lock_count[mutex]) == 1) {
+	    mutex_lock[mutex] = tid();
+	    now = gettimeofday_us();
+	    if (verbose) {
+		diff = now - mutex_lock_entry[tid(), mutex];
+		mutex_contention_total_time[mutex] += diff;
+		if (!mutex_contention_min_time[mutex] ||
+		    mutex_contention_min_time[mutex] > diff)
+		    mutex_contention_min_time[mutex] = diff;
+		if (mutex_contention_max_time[mutex] < diff)
+		    mutex_contention_max_time[mutex] = diff;
+		++mutex_contention_count[mutex];
+		++mutex_contention_per_thread[tid(), mutex];
+	    }
+	    mutex_lock_entry[tid(), mutex] = now;
 	}
-	/* Update from attempt lock time to acquired lock time */
-	mutex_lock_entry[tid(), mutex] = now;
+    }
+    else {
+	report = 1;
+	/* EAGAIN is returned if the counter wrapers around */
+	if (istry) {
+	    if (verbose)
+		++mutex_contention_fail_try[mutex];
+	    report = !trap_on_expected_busy || result != @EBUSY;
+	}
+	else if (tmout) {
+	    if (verbose)
+		++mutex_contention_fail_timed[mutex];
+	    report = !trap_on_expected_timedout || result != @ETIMEDOUT;
+	    delete mutex_lock_entry_timer[tid(), mutex];
+	}
+	if (report)
+	    report_error(ppfunc(), result);
+	delete mutex_lock_entry[tid(), mutex];
     }
 }
 
@@ -600,16 +622,7 @@ process("/lib64/libc.so.6").function("pthread_mutex_trylock").return {
 	next;
     result = @RETURN;
     mutex = @ENTRY_ARG1;
-    if (result == 0)
-	common_mutex_lock(mutex);
-    /* EAGAIN is returned if the counter wrapers around */
-    else {
-	if (!trap_on_expected_busy || result != @EBUSY)
-	    report_error(ppfunc(), result);
-	if (verbose)
-	    ++mutex_contention_fail_try[mutex];
-	delete mutex_lock_entry[tid(), mutex];
-    }
+    common_mutex_lock(mutex, 1, 0, result);
 }
 
 probe
@@ -630,17 +643,8 @@ process("/lib64/libc.so.6").function("pthread_mutex_timedlock").return {
 	next;
     result = @RETURN;
     mutex = @ENTRY_ARG1;
-    if (result == 0)
-	common_mutex_lock(mutex);
-    /* EAGAIN is returned if the counter wrapers around */
-    else {
-	if (!trap_on_expected_timedout || result != @ETIMEDOUT)
-	    report_error(ppfunc(), result);
-	delete mutex_lock_entry[tid(), mutex];
-	if (verbose)
-	    ++mutex_contention_fail_timed[mutex];
-    }
-    delete mutex_lock_entry_timer[tid(), mutex];
+    tmout = @ENTRY_ARG2;
+    common_mutex_lock(mutex, 0, tmout, result);
 }
 
 probe
@@ -659,15 +663,7 @@ process("/lib64/libc.so.6").function("pthread_mutex_lock").return {
 	next;
     result = @RETURN;
     mutex = @ENTRY_ARG1;
-    if (result == 0)
-	common_mutex_lock(mutex);
-    else {
-	/* Use -1 to flag the inconsistent state */
-	if (result == @EOWNERDEAD)
-	    mutex_consistent[mutex] = -1;
-	report_error(ppfunc(), result);
-	delete mutex_lock_entry[tid(), mutex];
-    }
+    common_mutex_lock(mutex, 0, 0, result);
 }
 
 probe
@@ -727,13 +723,15 @@ process("/lib64/libc.so.6").function("pthread_mutex_unlock").return {
     else {
 	if (--mutex_lock_count[mutex] == 0) {
 	    now = gettimeofday_us();
-	    diff = now - mutex_lock_entry[tid(), mutex];
-	    mutex_lock_total_time[mutex] += diff;
-	    if (!mutex_lock_min_time[mutex] ||
-		mutex_lock_min_time[mutex] > diff)
-		mutex_lock_min_time[mutex] = diff;
-	    if (mutex_lock_max_time[mutex] < diff)
-		mutex_lock_max_time[mutex] = diff;
+	    if (verbose) {
+		diff = now - mutex_lock_entry[tid(), mutex];
+		mutex_lock_total_time[mutex] += diff;
+		if (!mutex_lock_min_time[mutex] ||
+		    mutex_lock_min_time[mutex] > diff)
+		    mutex_lock_min_time[mutex] = diff;
+		if (mutex_lock_max_time[mutex] < diff)
+		    mutex_lock_max_time[mutex] = diff;
+	    }
 	    /* mutex_lock_count and mutex_lock_per_thread would be basically
 	     * the same as mutex_contention_*, not counting pending or active
 	     * locks. */
@@ -742,6 +740,36 @@ process("/lib64/libc.so.6").function("pthread_mutex_unlock").return {
 	    delete mutex_lock_entry_timer[tid(), mutex];
 	    delete mutex_lock_count[mutex];
 	}
+    }
+}
+
+function
+forget_mutex(mutex) {
+    delete mutex_lock[mutex];
+    if (expensive_checks) {
+	foreach ([tid, key] in mutex_lock_entry) {
+	    if (key == mutex) {
+		delete mutex_lock_entry[tid, mutex];
+		delete mutex_lock_entry_timer[tid, mutex];
+		break;
+	    }
+	}
+    }
+    delete mutex_lock_count[mutex];
+    if (verbose) {
+	delete mutex_contention_total_time[mutex];
+	delete mutex_contention_min_time[mutex];
+	delete mutex_contention_max_time[mutex];
+	delete mutex_contention_count[mutex];
+	foreach ([tid, key] in mutex_contention_per_thread) {
+	    if (key == mutex) {
+		delete mutex_contention_per_thread[tid, mutex];
+		break;
+	    }
+	}
+	delete mutex_lock_total_time[mutex];
+	delete mutex_lock_min_time[mutex];
+	delete mutex_lock_max_time[mutex];
     }
 }
 
@@ -813,8 +841,7 @@ common_cond_wait_call(cond, mutex, tmout) {
     cond_wait[tid(), cond] = gettimeofday_us();
     if (tmout)
 	cond_wait_timer[tid(), cond] = tmout;
-    if (verbose > 1) {
-	/* Expensive check */
+    if (expensive_checks) {
 	foreach ([tid, key] in mutex_wait) {
 	    value = mutex_wait[tid, key];
 	    if (key == cond && value != mutex) {
@@ -1642,6 +1669,10 @@ function report() {
 		    printf(", %ld failed lock%s",
 			   wrlock_contention_fail_try[wrlock],
 			   plural(wrlock_contention_fail_try[wrlock]));
+		if (wrlock_contention_fail_timed[wrlock])
+		    printf(", %ld timedout lock%s",
+			   wrlock_contention_fail_timed[wrlock],
+			   plural(wrlock_contention_fail_timed[wrlock]));
 		printf("\n");
 		printf("    total contention	: %s\n", time_string(time));
 		printf("    min contention	: %s\n",
