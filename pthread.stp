@@ -813,8 +813,10 @@ process("/lib64/libc.so.6").function("pthread_cond_broadcast").return {
     result = @RETURN;
     if (result == 0) {
 	cond = @ENTRY_ARG1;
-	++cond_broadcast_count[cond];
-	++cond_broadcast_per_thread[tid(), cond];
+	if (verbose) {
+	    ++cond_broadcast_count[cond];
+	    ++cond_broadcast_per_thread[tid(), cond];
+	}
     }
     else
 	report_error(ppfunc(), result);
@@ -829,8 +831,10 @@ process("/lib64/libc.so.6").function("pthread_cond_signal").return {
     result = @RETURN;
     if (result == 0) {
 	cond = @ENTRY_ARG1;
-	++cond_signal_count[cond];
-	++cond_signal_per_thread[tid(), cond];
+	if (verbose) {
+	    ++cond_signal_count[cond];
+	    ++cond_signal_per_thread[tid(), cond];
+	}
     }
     else
 	report_error(ppfunc(), result);
@@ -860,7 +864,8 @@ common_cond_wait_return(cond, mutex, tmout, result) {
     report = !!result;
     if (result) {
 	if (tmout && result == @ETIMEDOUT) {
-	    ++cond_wait_timedout[cond];
+	    if (verbose)
+		++cond_wait_timedout[cond];
 	    report = trap_on_expected_timedout;
 	}
 	if (report)
@@ -926,6 +931,47 @@ process("/lib64/libc.so.6").function("pthread_cond_timedwait").return {
     mutex = @ENTRY_ARG2;
     tmout = @ENTRY_ARG3;
     common_cond_wait_return(cond, mutex, tmout, result);
+}
+
+function
+forget_condition(cond) {
+    delete conditions[cond];
+    if (expensive_checks) {
+	/* These might only hold data on error/debug conditions */
+	foreach ([tid, key] in cond_wait) {
+	    if (key == cond)
+		delete cond_wait[tid, key];
+	}
+	foreach ([tid, key] in mutex_wait) {
+	    if (key == cond)
+		delete mutex_wait[tid, key];
+	}
+	foreach ([tid, key] in cond_wait_timer) {
+	    if (key == cond)
+		delete cond_wait_timer[tid, key];
+	}
+    }
+    if (verbose) {
+	delete cond_broadcast_count[cond];
+	foreach ([tid, key] in cond_broadcast_per_thread) {
+	    if (key == cond)
+		delete cond_broadcast_per_thread[tid, cond];
+	}
+	delete cond_signal_count[cond];
+	foreach ([tid, key] in cond_signal_per_thread) {
+	    if (key == cond)
+		delete cond_signal_per_thread[tid, cond];
+	}
+	delete cond_wait_timedout[cond];
+	delete cond_wait_count[cond];
+	delete cond_wait_total_time[cond];
+	delete cond_wait_min_time[cond];
+	delete cond_wait_max_time[cond];
+	foreach ([tid, key] in cond_wait_per_thread) {
+	    if (key == cond)
+		delete cond_wait_per_thread[tid, cond];
+	}
+    }
 }
 
 probe
