@@ -561,6 +561,7 @@ process("/lib64/libc.so.6").function("pthread_mutex_init").return {
 	/*
 	attr  = @ENTRY_ARG2;
 	 */
+	check_memory_reuse(mutex);
 	mutex_init[mutex] = gettimeofday_us();
     }
     else
@@ -801,6 +802,7 @@ process("/lib64/libc.so.6").function("pthread_cond_init").return {
      */
     if (result == 0) {
 	cond = @ENTRY_ARG1;
+	check_memory_reuse(cond);
 	cond_init[cond] = gettimeofday_us();
     }
     else
@@ -1002,6 +1004,7 @@ process("/lib64/libc.so.6").function("pthread_rwlock_init").return {
 	/*
 	attr	= @ENTRY_ARG2;
 	 */
+	check_memory_reuse(rwlock);
 	rwlock_init[rwlock] = gettimeofday_us();
     }
     else
@@ -1318,6 +1321,7 @@ process("/lib64/libc.so.6").function("pthread_spin_init").return {
 	/*
 	shared	= @ENTRY_ARG2;
 	 */
+	check_memory_reuse(spin);
 	spin_init[spin] = gettimeofday_us();
     }
     else
@@ -1424,8 +1428,7 @@ forget_spinlock(spin) {
     if (expensive_checks) {
 	foreach ([tid, key] in spin_entry) {
 	    if (key == spin) {
-		delete spin_lock_entry[tid, spin];
-		delete spin_lock_entry_timer[tid, spin];
+		delete spin_entry[tid, spin];
 		break;
 	    }
 	}
@@ -1443,10 +1446,22 @@ forget_spinlock(spin) {
 		break;
 	    }
 	}
-	delete spin_lock_total_time[spin];
-	delete spin_lock_min_time[spin];
-	delete spin_lock_max_time[spin];
+	delete spin_total_time[spin];
+	delete spin_min_time[spin];
+	delete spin_max_time[spin];
     }
+}
+
+function
+check_memory_reuse(pointer) {
+    if (mutex_init[pointer])
+	forget_mutex(pointer);
+    else if (cond_init[pointer])
+	forget_condition(pointer);
+    else if (rwlock_init[pointer])
+	forget_rwlock(pointer);
+    else if (spin_init[pointer])
+	forget_spinlock(pointer);
 }
 
 probe
