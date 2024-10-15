@@ -989,7 +989,6 @@ process("/lib64/libc.so.6").function("pthread_cond_destroy").return {
 	report_error(ppfunc(), result);
 }
 
-
 probe
 process("/lib64/libc.so.6").function("__pthread_rwlock_init").return !,
 process("/lib64/libc.so.6").function("pthread_rwlock_init").return {
@@ -1207,7 +1206,6 @@ process("/lib64/libc.so.6").function("pthread_rwlock_unlock").return {
 	report_error(ppfunc(), result);
     else {
 	if (verbose) {
-	    --wrlock_count[rwlock];
 	    now = gettimeofday_us();
 	    if (rd) {
 		diff = now - rdlock_entry[tid(), rwlock];
@@ -1238,6 +1236,56 @@ process("/lib64/libc.so.6").function("pthread_rwlock_unlock").return {
 	delete wrlocks[rwlock];
 	delete wrlock_entry[tid(), rwlock];
 	delete wrlock_entry_timer[tid(), rwlock];
+    }
+}
+
+function
+forget_rwlock(rwlock)
+{
+    delete rdlocks[rwlock];
+    delete wrlocks[rwlock];
+    if (verbose) {
+	delete rdlock_count[rwlock];
+	delete wrlock_count[rwlock];
+	delete rdlock_contention_total_time[rwlock];
+	delete wrlock_contention_total_time[rwlock];
+	delete rdlock_contention_min_time[rwlock];
+	delete wrlock_contention_min_time[rwlock];
+	delete rdlock_contention_max_time[rwlock];
+	delete wrlock_contention_max_time[rwlock];
+	delete rdlock_total_time[rwlock];
+	delete wrlock_total_time[rwlock];
+	delete rdlock_min_time[rwlock];
+	delete wrlock_min_time[rwlock];
+	delete rdlock_max_time[rwlock];
+	delete wrlock_max_time[rwlock];
+	foreach ([tid, key] in rdlock_contention_per_thread) {
+	    if (key == rwlock)
+		delete rdlock_contention_per_thread[tid, rwlock];
+	}
+	foreach ([tid, key] in wrlock_contention_per_thread) {
+	    if (key == rwlock)
+		delete wrlock_contention_per_thread[tid, rwlock];
+	}
+    }
+    /* Should never happen or an error already triggered */
+    if (expensive_checks) {
+	foreach ([tid, key] in rdlock_entry) {
+	    if (key == rwlock)
+		delete rdlock_entry[tid, rwlock];
+	}
+	foreach ([tid, key] in rdlock_entry_timer) {
+	    if (key == rwlock)
+		delete rdlock_entry_timer[tid, rwlock];
+	}
+	foreach ([tid, key] in wrlock_entry) {
+	    if (key == rwlock)
+		delete wrlock_entry[tid, rwlock];
+	}
+	foreach ([tid, key] in wrlock_entry_timer) {
+	    if (key == rwlock)
+		delete wrlock_entry_timer[tid, rwlock];
+	}
     }
 }
 
