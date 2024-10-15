@@ -767,6 +767,8 @@ forget_mutex(mutex) {
 		break;
 	    }
 	}
+	delete mutex_contention_fail_try[mutex];
+	delete mutex_contention_fail_timed[mutex];
 	delete mutex_lock_total_time[mutex];
 	delete mutex_lock_min_time[mutex];
 	delete mutex_lock_max_time[mutex];
@@ -1253,6 +1255,8 @@ forget_rwlock(rwlock)
 	delete wrlock_contention_min_time[rwlock];
 	delete rdlock_contention_max_time[rwlock];
 	delete wrlock_contention_max_time[rwlock];
+	delete wrlock_contention_fail_try[rwlock];
+	delete wrlock_contention_fail_timed[rwlock];
 	delete rdlock_total_time[rwlock];
 	delete wrlock_total_time[rwlock];
 	delete rdlock_min_time[rwlock];
@@ -1326,7 +1330,7 @@ common_spin_lock(spin, istry, result) {
 	spinlocks[spin] = tid();
 	now = gettimeofday_us();
 	if (verbose) {
-	    ++rdlock_count[spin];
+	    ++spin_count[spin];
 	    diff = now - spin_entry[tid(), spin];
 	    spin_contention_total_time[spin] += diff;
 	    if (!spin_contention_min_time[spin] ||
@@ -1412,6 +1416,37 @@ process("/lib64/libc.so.6").function("pthread_spin_unlock").return {
     }
     delete spinlocks[spin];
     delete spin_entry[tid(), spin];
+}
+
+function
+forget_spinlock(spin) {
+    delete spinlocks[spin];
+    if (expensive_checks) {
+	foreach ([tid, key] in spin_entry) {
+	    if (key == spin) {
+		delete spin_lock_entry[tid, spin];
+		delete spin_lock_entry_timer[tid, spin];
+		break;
+	    }
+	}
+    }
+    delete spin_count[spin];
+    if (verbose) {
+	delete spin_contention_total_time[spin];
+	delete spin_contention_min_time[spin];
+	delete spin_contention_max_time[spin];
+	delete spin_contention_count[spin];
+	delete spin_contention_fail_try[spin];
+	foreach ([tid, key] in spin_contention_per_thread) {
+	    if (key == spin) {
+		delete spin_contention_per_thread[tid, spin];
+		break;
+	    }
+	}
+	delete spin_lock_total_time[spin];
+	delete spin_lock_min_time[spin];
+	delete spin_lock_max_time[spin];
+    }
 }
 
 probe
