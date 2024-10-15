@@ -914,7 +914,18 @@ forget_mutex(mutex) {
 		details_thread_count[tid] = 1;
 	}
 	foreach (tid in details_thread_count) {
+	    printf("BUG: Should not have mutex_lock_entry[%p, %p]\n",
+		   tid, mutex);
 	    delete mutex_lock_entry[tid, mutex];
+	}
+	delete details_thread_count;
+	foreach ([tid, key] in mutex_lock_entry_timer) {
+	    if (key == mutex)
+		details_thread_count[tid] = 1;
+	}
+	foreach (tid in details_thread_count) {
+	    printf("BUG: Should not have mutex_lock_entry_timer[%p, %p]\n",
+		   tid, mutex);
 	    delete mutex_lock_entry_timer[tid, mutex];
 	}
 	delete details_thread_count;
@@ -1112,6 +1123,7 @@ forget_condition(cond) {
 		details_thread_count[tid] = 1;
 	}
 	foreach (tid in details_thread_count) {
+	    printf("BUG: Should not have cond_wait[%p, %p]\n", tid, cond);
 	    delete cond_wait[tid, cond];
 	}
 	delete details_thread_count;
@@ -1120,6 +1132,7 @@ forget_condition(cond) {
 		details_thread_count[tid] = 1;
 	}
 	foreach (tid in details_thread_count) {
+	    printf("BUG: Should not have mutex_wait[%p, %p]\n", tid, cond);
 	    delete mutex_wait[tid, cond];
 	}
 	delete details_thread_count;
@@ -1128,6 +1141,7 @@ forget_condition(cond) {
 		details_thread_count[tid] = 1;
 	}
 	foreach (tid in details_thread_count) {
+	    printf("BUG: Should not have cond_wait_timer[%p, %p]\n", tid, cond);
 	    delete cond_wait_timer[tid, cond];
 	}
 	delete details_thread_count;
@@ -1478,6 +1492,7 @@ forget_rwlock(rwlock)
 		details_thread_count[tid] = 1;
 	}
 	foreach (tid in details_thread_count) {
+	    printf("BUG: Should not have rdlock_entry[%p, %p]\n", tid, rwlock);
 	    delete rdlock_entry[tid, rwlock];
 	}
 	delete details_thread_count;
@@ -1486,6 +1501,8 @@ forget_rwlock(rwlock)
 		details_thread_count[tid] = 1;
 	}
 	foreach (tid in details_thread_count) {
+	    printf("BUG: Should not have rdlock_entry_timer[%p, %p]\n",
+		   tid, rwlock);
 	    delete rdlock_entry_timer[tid, rwlock];
 	}
 	delete details_thread_count;
@@ -1494,6 +1511,7 @@ forget_rwlock(rwlock)
 		details_thread_count[tid] = 1;
 	}
 	foreach (tid in details_thread_count) {
+	    printf("BUG: Should not have wrlock_entry[%p, %p]\n", tid, rwlock);
 	    delete wrlock_entry[tid, rwlock];
 	}
 	delete details_thread_count;
@@ -1502,6 +1520,8 @@ forget_rwlock(rwlock)
 		details_thread_count[tid] = 1;
 	}
 	foreach (tid in details_thread_count) {
+	    printf("BUG: Should not have wrlock_entry_timer[%p, %p]\n",
+		   tid, rwlock);
 	    delete wrlock_entry_timer[tid, rwlock];
 	}
 	delete details_thread_count;
@@ -1643,6 +1663,7 @@ forget_spinlock(spin) {
 		details_thread_count[tid] = 1;
 	}
 	foreach (tid in details_thread_count) {
+	    printf("BUG: Should not have spin_entry[%p, %p]\n", tid, spin);
 	    delete spin_entry[tid, spin];
 	}
 	delete details_thread_count;
