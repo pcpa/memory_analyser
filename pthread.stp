@@ -224,6 +224,9 @@ global report_rdlock_count = 10;
 /* Number of detailed write rwlocks to report; sorted by total wait time. */
 global report_wrlock_count = 10;
 
+/* Number of detailed spinlocks to report; sorted by total wait time. */
+global report_spin_count = 10;
+
 private global tid_to_thread;
 private global thread_to_tid;
 private global thread_name;
@@ -313,6 +316,17 @@ private global wrlock_max_time;
 private global spin_init;
 private global spin_entry;
 private global spinlocks;
+
+private global spin_count;
+private global spin_contention_total_time;
+private global spin_contention_min_time;
+private global spin_contention_max_time;
+private global spin_contention_count;
+private global spin_contention_per_thread;
+private global spin_contention_fail_try;
+private global spin_total_time;
+private global spin_min_time;
+private global spin_max_time;
 
 global process_name = "";
 global process_arguments, exec_process_arguments;
@@ -1114,22 +1128,6 @@ process("/lib64/libc.so.6").function("pthread_rwlock_unlock").return {
     if (pid() != target())
 	next;
     result = @RETURN;
-    if (result == 0) {
-	rwlock	= @ENTRY_ARG1;
-	if (wrlocks[rwlock])
-	    /* assert(wrlocks[rwlock] == tid() */
-	    delete wrlocks[rwlock];
-	if (wrlocks[rwlock])
-	    /* assert(wrlocks[rwlock] == tid() */
-	    delete wrlocks[rwlock];
-    }
-    else
-	report_error(ppfunc(), result);
-
-
-    if (pid() != target())
-	next;
-    result = @RETURN;
     rwlock = @ENTRY_ARG1;
     rd = rdlocks[rwlock];
     if (result)
@@ -1201,6 +1199,37 @@ process("/lib64/libc.so.6").function("pthread_spin_init").return {
 	report_error(ppfunc(), result);
 }
 
+function
+common_spin_lock(spin, istry, result) {
+    if (result == 0) {
+	spinlocks[spin] = tid();
+	now = gettimeofday_us();
+	if (verbose) {
+	    ++rdlock_count[spin];
+	    diff = now - spin_entry[tid(), spin];
+	    spin_contention_total_time[spin] += diff;
+	    if (!spin_contention_min_time[spin] ||
+		spin_contention_min_time[spin] > diff)
+		spin_contention_min_time[spin] = diff;
+	    if (spin_contention_max_time[spin] < diff)
+		spin_contention_max_time[spin] = diff;
+	    ++spin_contention_count[spin];
+	    ++spin_contention_per_thread[tid(), spin];
+	}
+	spin_entry[tid(), spin] = now;
+    }
+    else {
+	report = 1;
+	if (istry) {
+	    report = !trap_on_expected_busy || result != @EBUSY;
+	    ++spin_contention_fail_try[spin];
+	}
+	if (report)
+	    report_error(ppfunc(), result);
+	delete spin_entry[tid(), spin];
+    }
+}
+
 probe
 process("/lib64/libc.so.6").function("__pthread_spin_lock") !,
 process("/lib64/libc.so.6").function("pthread_spin_lock") {
@@ -1217,15 +1246,7 @@ process("/lib64/libc.so.6").function("pthread_spin_lock").return {
 	next;
     result	= @RETURN;
     spin	= @ENTRY_ARG1;
-    if (result == 0) {
-	spinlocks[spin] = tid();
-	/* Update to lock timestamp, not attempt to get lock */
-	spin_entry[tid(), spin] = gettimeofday_us();
-    }
-    else {
-	report_error(ppfunc(), result);
-	spin_entry[tid(), spin] = -1;
-    }
+    common_spin_lock(spin, 0, result);
 }
 
 probe
@@ -1244,16 +1265,7 @@ process("/lib64/libc.so.6").function("pthread_spin_trylock").return {
 	next;
     result	= @RETURN;
     spin	= @ENTRY_ARG1;
-    if (result == 0) {
-	spinlocks[spin] = tid();
-	/* Update to lock timestamp, not attempt to get lock */
-	spin_entry[tid(), spin] = gettimeofday_us();
-    }
-    else {
-	if (!trap_on_expected_busy || result != @EBUSY)
-	    report_error(ppfunc(), result);
-	spin_entry[tid(), spin] = -1;
-    }
+    common_spin_lock(spin, 1, result);
 }
 
 probe
@@ -1262,14 +1274,23 @@ process("/lib64/libc.so.6").function("pthread_spin_unlock").return {
     if (pid() != target())
 	next;
     result = @RETURN;
-    if (result == 0) {
-	spin	= @ENTRY_ARG1;
-	if (spinlocks[spin])
-	    /* assert(spinlocks[spin] == tid() */
-	    delete spinlocks[spin];
-    }
-    else
+    spin = @ENTRY_ARG1;
+    if (result)
 	report_error(ppfunc(), result);
+    else {
+	if (verbose) {
+	    --spin_count[spin];
+	    now = gettimeofday_us();
+	    diff = now - spin_entry[tid(), spin];
+	    spin_total_time[spin] += diff;
+	    if (!spin_min_time[spin] ||	spin_min_time[spin] > diff)
+		spin_min_time[spin] = diff;
+	    if (spin_max_time[spin] < diff)
+		spin_max_time[spin] = diff;
+	}
+    }
+    delete spinlocks[spin];
+    delete spin_entry[tid(), spin];
 }
 
 probe
@@ -1662,6 +1683,56 @@ function report() {
     }
     delete details;
 
+    if (verbose) {
+	count = 0;
+	foreach ([tid, spin] in spin_contention_per_thread) {
+	    ++details_thread_count[spin];
+	}
+	foreach (spin in spin_contention_total_time) {
+	    details[spin, spin_contention_total_time[spin]] =
+		details_thread_count[spin];
+	}
+	delete details_thread_count;
+	foreach ([spin, time-] in details) {
+	    if (spin_contention_count[spin]) {
+		if (count++ >= report_spin_count)
+		    break;
+		if (rwlock_init[spin])
+		    printf("%s ",
+			   spin_init[spin] > 0 ?
+			   "initialized" : "*destroyed");
+		printf("spin %p locked %ld time%s by %ld thread%s",
+		       spin,
+		       spin_contention_count[spin],
+		       plural(spin_contention_count[spin]),
+		       details[spin, time],
+		       plural(details[spin, time]));
+		if (spin_contention_fail_try[spin])
+		    printf(", %ld failed lock%s",
+			   spin_contention_fail_try[spin],
+			   plural(spin_contention_fail_try[spin]));
+		printf("\n");
+		printf("    total contention	: %s\n", time_string(time));
+		printf("    min contention	: %s\n",
+		       time_string(spin_contention_min_time[spin]));
+		printf("    max contention	: %s\n",
+		       time_string(spin_contention_max_time[spin]));
+		printf("    average contention	: %s\n",
+		       time_string(spin_contention_total_time[spin] /
+				   spin_contention_count[spin]));
+		printf("    total lock		: %s\n",
+		       time_string(spin_total_time[spin]));
+		printf("    min lock		: %s\n",
+		       time_string(spin_min_time[spin]));
+		printf("    max lock		: %s\n",
+		       time_string(spin_max_time[spin]));
+		printf("    average lock	: %s\n",
+		       time_string(spin_total_time[spin] /
+				   spin_contention_count[spin]));
+	    }
+	}
+	delete details;
+    }
     foreach (spin in spinlocks) {
 	tid = spinlocks[spin];
 	if (tid)
@@ -1753,6 +1824,16 @@ function reset() {
 	delete wrlock_total_time;
 	delete wrlock_min_time;
 	delete wrlock_max_time;
+	delete spin_count;
+	delete spin_contention_total_time;
+	delete spin_contention_min_time;
+	delete spin_contention_max_time;
+	delete spin_contention_count;
+	delete spin_contention_per_thread;
+	delete spin_contention_fail_try;
+	delete spin_total_time;
+	delete spin_min_time;
+	delete spin_max_time;
     }
     delete mutex_lock;
     delete mutex_lock_entry;
