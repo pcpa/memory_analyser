@@ -371,6 +371,10 @@ global trap_on_again = -1;
 global trap_on_expected_busy = 0;
 global trap_on_expected_timedout = 0;
 
+/* -Gtrap_on_unexpected=1 to debug either bugs in the script, expected
+ * conditions or bugs in the application. */
+global trap_on_unexpected = 0;
+
 global verbose = 0;
 
 global expensive_checks = 0;
@@ -492,13 +496,21 @@ private global spin_total_time;
 private global spin_min_time;
 private global spin_max_time;
 
-global process_name = "";
-global process_arguments, exec_process_arguments;
+private global process_name = "";
+private global process_path = "";
+private global process_arguments, exec_process_arguments;
 
 private global details;
 private global details_thread_count;
 private global details_signal_count;
 private global details_broadcast_count;
+
+/* If gdbserver does not work, you can try:
+ * while test -z "$(pidof BINARY)"; do :; done; gdb -p $(pidof BINARY)
+ */
+global start_gdbserver = 0;
+global gdbserver_port = 1234;
+global binary_path_for_gdbserver = "";
 
 @define	EPERM			%(   1 %)
 @define EAGAIN			%(  11 %)
@@ -523,6 +535,26 @@ private global _return;
 @define RETURN			%( @defined($return) ? $return : register(_return) %)
 
 probe begin {
+    /* Make it easier to attach gdb to the proper process, if it is run
+     * by some wrapper script or exec'ed (e.g. env ENV=val binary).
+     * Note that full path is expected to specified here. */
+    %( $# >= 1 %?
+      if (start_gdbserver)
+	  binary_path_for_gdbserver = @1;
+	  %)
+
+    tokenize(cmdline_str(), " ");
+    token = tokenize("", " ");
+    if (token != "-c")
+	error(sprintf("Failed to tokenize command line.\n"
+		      "Cannot run system wide. "
+		      "Must use '-c CMD''.\n"
+		      "cmdline_str() returns <%s>\n",
+		      cmdline_str()));
+    if (start_gdbserver && binary_path_for_gdbserver == "")
+	error("When starting gdb_server must specify the binary path.\n"
+	      "Example: stap OPTS -c \"CMD\" /binary/path/for/gdbserver\n");
+
     /* No setting to "only" trap on specific error */
     if (trap_on_ownerdead == -1)
 	trap_on_ownerdead = trap_on_all_errors;
@@ -554,6 +586,15 @@ probe begin {
     printf("Stap ready.\n");
 }
 
+function run_gdbserver(pid) {
+    system(sprintf("gdbserver --attach :%d %d",
+		   gdbserver_port, pid));
+    printf("To attach gdb, run in the command line\n$ gdb %s\n",
+	   process_path);
+    printf("In gdb prompt type:\n(gdb) target remote :%d\n\n",
+	   gdbserver_port);
+}
+
 function report_error(where:string, errno:long) {
     if ((errno == @EOWNERDEAD && !trap_on_ownerdead) ||
 	(errno == @ETIMEDOUT && !trap_on_timedout) ||
@@ -565,6 +606,17 @@ function report_error(where:string, errno:long) {
     print_ubacktrace();
     %(guru_mode != 0 %?
       raise(%{ SIGTRAP %}) %: printf("generating SIGTRAP needs guru mode\n")
+	  %);
+}
+
+function unexpected_condition(variable:string, tid:long, pointer:long,
+			      destroyed:long) {
+    printf("Unexpected %s[%ld, %p] %s\n", variable, tid, pointer,
+	   destroyed ? "already destroyed" : "still initialized");
+    if (trap_on_unexpected)
+	%(guru_mode != 0 %?
+	  raise(%{ SIGTRAP %}) %:
+	  printf("generating SIGTRAP needs guru mode\n")
 	  %);
 }
 
@@ -722,7 +774,7 @@ process("/lib64/libc.so.6").function("pthread_mutex_init").return {
 	/*
 	attr  = @ENTRY_ARG2;
 	 */
-	check_memory_reuse(mutex);
+	check_memory_reuse(mutex, "mutex");
 	mutex_init[mutex] = gettimeofday_us();
     }
     else
@@ -909,13 +961,14 @@ function
 forget_mutex(mutex) {
     delete mutex_lock[mutex];
     if (expensive_checks) {
+	destroyed = mutex_init[mutex] == -1;
 	foreach ([tid, key] in mutex_lock_entry) {
 	    if (key == mutex)
 		details_thread_count[tid] = 1;
 	}
 	foreach (tid in details_thread_count) {
-	    printf("BUG: Should not have mutex_lock_entry[%ld, %p]\n",
-		   tid, mutex);
+	    unexpected_condition("mutex_lock_entry",
+				 tid, mutex, destroyed);
 	    delete mutex_lock_entry[tid, mutex];
 	}
 	delete details_thread_count;
@@ -924,8 +977,8 @@ forget_mutex(mutex) {
 		details_thread_count[tid] = 1;
 	}
 	foreach (tid in details_thread_count) {
-	    printf("BUG: Should not have mutex_lock_entry_timer[%ld, %p]\n",
-		   tid, mutex);
+	    unexpected_condition("mutex_lock_entry_timer",
+				 tid, mutex, destroyed);
 	    delete mutex_lock_entry_timer[tid, mutex];
 	}
 	delete details_thread_count;
@@ -978,7 +1031,7 @@ process("/lib64/libc.so.6").function("pthread_cond_init").return {
      */
     if (result == 0) {
 	cond = @ENTRY_ARG1;
-	check_memory_reuse(cond);
+	check_memory_reuse(cond, "cond");
 	cond_init[cond] = gettimeofday_us();
     }
     else
@@ -1116,13 +1169,14 @@ process("/lib64/libc.so.6").function("pthread_cond_timedwait").return {
 function
 forget_condition(cond) {
     if (expensive_checks) {
+	destroyed = cond_init[cond] == -1;
 	/* These might only hold data on error/debug conditions */
 	foreach ([tid, key] in cond_wait) {
 	    if (key == cond)
 		details_thread_count[tid] = 1;
 	}
 	foreach (tid in details_thread_count) {
-	    printf("BUG: Should not have cond_wait[%ld, %p]\n", tid, cond);
+	    unexpected_condition("cond_wait", tid, cond, destroyed);
 	    delete cond_wait[tid, cond];
 	}
 	delete details_thread_count;
@@ -1131,7 +1185,7 @@ forget_condition(cond) {
 		details_thread_count[tid] = 1;
 	}
 	foreach (tid in details_thread_count) {
-	    printf("BUG: Should not have mutex_wait[%ld, %p]\n", tid, cond);
+	    unexpected_condition("mutex_wait", tid, cond, destroyed);
 	    delete mutex_wait[tid, cond];
 	}
 	delete details_thread_count;
@@ -1140,7 +1194,7 @@ forget_condition(cond) {
 		details_thread_count[tid] = 1;
 	}
 	foreach (tid in details_thread_count) {
-	    printf("BUG: Should not have cond_wait_timer[%ld, %p]\n", tid, cond);
+	    unexpected_condition("cond_wait_timer", tid, cond, destroyed);
 	    delete cond_wait_timer[tid, cond];
 	}
 	delete details_thread_count;
@@ -1205,7 +1259,7 @@ process("/lib64/libc.so.6").function("pthread_rwlock_init").return {
 	/*
 	attr	= @ENTRY_ARG2;
 	 */
-	check_memory_reuse(rwlock);
+	check_memory_reuse(rwlock, "rwlock");
 	rwlock_init[rwlock] = gettimeofday_us();
     }
     else
@@ -1486,12 +1540,13 @@ forget_rwlock(rwlock)
     }
     /* Should never happen or an error already triggered */
     if (expensive_checks) {
+	destroyed = rwlock_init[rwlock] == -1;
 	foreach ([tid, key] in rdlock_entry) {
 	    if (key == rwlock)
 		details_thread_count[tid] = 1;
 	}
 	foreach (tid in details_thread_count) {
-	    printf("BUG: Should not have rdlock_entry[%ld, %p]\n", tid, rwlock);
+	    unexpected_condition("rdlock_entry", tid, rwlock, destroyed);
 	    delete rdlock_entry[tid, rwlock];
 	}
 	delete details_thread_count;
@@ -1500,8 +1555,7 @@ forget_rwlock(rwlock)
 		details_thread_count[tid] = 1;
 	}
 	foreach (tid in details_thread_count) {
-	    printf("BUG: Should not have rdlock_entry_timer[%ld, %p]\n",
-		   tid, rwlock);
+	    unexpected_condition("rdlock_entry_timer", tid, rwlock, destroyed);
 	    delete rdlock_entry_timer[tid, rwlock];
 	}
 	delete details_thread_count;
@@ -1510,7 +1564,7 @@ forget_rwlock(rwlock)
 		details_thread_count[tid] = 1;
 	}
 	foreach (tid in details_thread_count) {
-	    printf("BUG: Should not have wrlock_entry[%ld, %p]\n", tid, rwlock);
+	    unexpected_condition("wrlock_entry", tid, rwlock, destroyed);
 	    delete wrlock_entry[tid, rwlock];
 	}
 	delete details_thread_count;
@@ -1519,8 +1573,7 @@ forget_rwlock(rwlock)
 		details_thread_count[tid] = 1;
 	}
 	foreach (tid in details_thread_count) {
-	    printf("BUG: Should not have wrlock_entry_timer[%ld, %p]\n",
-		   tid, rwlock);
+	    unexpected_condition("wrlock_entry_timer", tid, rwlock, destroyed);
 	    delete wrlock_entry_timer[tid, rwlock];
 	}
 	delete details_thread_count;
@@ -1552,7 +1605,7 @@ process("/lib64/libc.so.6").function("pthread_spin_init").return {
 	/*
 	shared	= @ENTRY_ARG2;
 	 */
-	check_memory_reuse(spin);
+	check_memory_reuse(spin, "spin");
 	spin_init[spin] = gettimeofday_us();
     }
     else
@@ -1657,12 +1710,13 @@ function
 forget_spinlock(spin) {
     delete spinlocks[spin];
     if (expensive_checks) {
+	destroyed = spin_init[spin] == -1;
 	foreach ([tid, key] in spin_entry) {
 	    if (key == spin)
 		details_thread_count[tid] = 1;
 	}
 	foreach (tid in details_thread_count) {
-	    printf("BUG: Should not have spin_entry[%ld, %p]\n", tid, spin);
+	    unexpected_condition("spin_entry", tid, spin, destroyed);
 	    delete spin_entry[tid, spin];
 	}
 	delete details_thread_count;
@@ -1689,15 +1743,43 @@ forget_spinlock(spin) {
 }
 
 function
-check_memory_reuse(pointer) {
-    if (mutex_init[pointer])
+check_memory_reuse(pointer, type) {
+    if (mutex_init[pointer]) {
+	if (expensive_checks && mutex_init[pointer] != -1) {
+	    printf("mutex %p reused", pointer);
+	    if (type != "mutex")
+		printf(" as a %s", type);
+	    printf("\n");
+	}
 	forget_mutex(pointer);
-    else if (cond_init[pointer])
+    }
+    else if (cond_init[pointer]) {
+	if (expensive_checks && cond_init[pointer] != -1) {
+	    printf("cond %p reused", pointer);
+	    if (type != "cond")
+		printf(" as a %s", type);
+	    printf("\n");
+	}
 	forget_condition(pointer);
-    else if (rwlock_init[pointer])
+    }
+    else if (rwlock_init[pointer]) {
+	if (expensive_checks && rwlock_init[pointer] != -1) {
+	    printf("rwlock %p reused", pointer);
+	    if (type != "rwlock")
+		printf(" as a %s", type);
+	    printf("\n");
+	}
 	forget_rwlock(pointer);
-    else if (spin_init[pointer])
+    }
+    else if (spin_init[pointer]) {
+	if (expensive_checks && spin_init[pointer] != -1) {
+	    printf("spin %p reused", pointer);
+	    if (type != "rwlock")
+		printf(" as a %s", type);
+	    printf("\n");
+	}
 	forget_spinlock(pointer);
+    }
 }
 
 probe
@@ -2172,6 +2254,7 @@ probe signal.send {
 probe kprocess.exec {
     if (pid() != target())
 	next;
+    process_path = filename;
     exec_process_arguments = argstr;
 }
 
@@ -2183,6 +2266,22 @@ probe kprocess.exec_complete {
 	    report();
 	    reset();
 	}
+
+	if (start_gdbserver) {
+	    printf("binary_path_for_gdbserver = %s\nprocess_path = %s\n",
+		   binary_path_for_gdbserver, process_path);
+	}
+
+	if (start_gdbserver &&
+	    ((binary_path_for_gdbserver != "" &&
+	      (binary_path_for_gdbserver == process_path ||
+	       /* process_path is a string starting/ending with quotes */
+	       sprintf("\"%s\"", binary_path_for_gdbserver) == process_path ||
+	       /* Extra heuristic to match "/bin/foo" in "/usr/bin/foo"
+		* and simplify the logic to "work as intended" */
+	       isinstr(process_path, binary_path_for_gdbserver))) ||
+	     (binary_path_for_gdbserver == "" && process_path != "")))
+	    run_gdbserver(pid());
 	process_name = execname();
 	process_arguments = exec_process_arguments;
     }
