@@ -1230,6 +1230,7 @@ forget_condition(cond) {
 	foreach (tid in details_thread_count) {
 	    delete cond_wait_per_thread[tid, cond];
 	}
+	delete details_thread_count;
     }
 }
 
