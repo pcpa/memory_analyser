@@ -398,6 +398,18 @@ global report_spin_count = 10;
 private global tid_to_thread;
 private global thread_to_tid;
 private global thread_name;
+
+/* Explicit pthread_exit */
+private global exited_tids;
+/* Explicit pthread_join */
+private global joined_tids;
+/* Explicit pthread_cancel */
+private global canceled_tids;
+/* Kernel did terminate but still uncertain if process is exiting,
+ * possibly due to a SIGTERM. In such case, do not cleanup all data
+ * to avoid too many false positives about unexpected states. */
+private global uncertain_tids;
+
 private global mutex_lock;
 private global mutex_lock_count;
 private global mutex_lock_entry;
@@ -664,6 +676,7 @@ process("/lib64/libc.so.6").mark("pthread_start") {
     routine	= $arg2;
     arg		= $arg3;
      */
+    check_memory_reuse(thread, "thread");
     tid_to_thread[tid()] = thread;
     thread_to_tid[thread] = tid();
 }
@@ -691,7 +704,8 @@ process("/lib64/libc.so.6").function("pthread_cancel").return {
 	next;
     result = @RETURN;
     if (result == 0) {
-	// thread = @ENTRY_ARG1;
+	thread = @ENTRY_ARG1;
+	canceled_tids[thread_to_tid[thread]] = gettimeofday_us();
     }
     else
 	report_error(ppfunc(), result);
@@ -729,6 +743,7 @@ process("/lib64/libc.so.6").function("pthread_exit") {
     delete thread_to_tid[thread];
     if (verbose)
 	delete thread_name[thread];
+    exited_tids[tid()] = gettimeofday_us();
 }
 
 probe
@@ -744,6 +759,7 @@ process("/lib64/libc.so.6").function("pthread_join").return {
 	delete thread_to_tid[thread];
 	if (verbose)
 	    delete thread_name[thread];
+	joined_tids[tid()] = gettimeofday_us();
     }
     else
 	report_error(ppfunc(), result);
@@ -761,6 +777,228 @@ process("/lib64/libc.so.6").function("pthread_kill").return {
     }
     else
 	report_error(ppfunc(), result);
+}
+
+function
+forget_tid(tid, force) {
+    if (exited_tids[tid])
+	delete exited_tids[tid];
+    else if (joined_tids[tid])
+	delete joined_tids[tid];
+    else if (canceled_tids[tid])
+	delete canceled_tids[tid];
+    else if (!force)
+	return 0;
+    delete thread_to_tid[tid_to_thread[tid]];
+    if (verbose)
+	delete thread_name[tid_to_thread[tid]];
+    delete tid_to_thread[tid];
+    if (expensive_checks) {
+	actually_expected = !!uncertain_tids[tid];
+	foreach([key, mutex] in mutex_lock_entry) {
+	    if (key == tid)
+		details_thread_count[mutex] = 1;
+	}
+	foreach (mutex in details_thread_count) {
+	    if (!actually_expected)
+		unexpected_condition("mutex_lock_entry",
+				     tid, mutex, mutex_init[mutex] == -1);
+	    delete mutex_lock_entry[tid, mutex];
+	}
+	delete details_thread_count;
+	foreach([key, mutex] in mutex_lock_entry_timer) {
+	    if (key == tid)
+		details_thread_count[mutex] = 1;
+	}
+	foreach (mutex in details_thread_count) {
+	    if (!actually_expected)
+		unexpected_condition("mutex_lock_entry_timer",
+				     tid, mutex, mutex_init[mutex] == -1);
+	    delete mutex_lock_entry_timer[tid, mutex];
+	}
+	delete details_thread_count;
+    }
+    if (verbose) {
+	foreach([key, mutex] in mutex_contention_per_thread) {
+	    if (key == tid)
+		details_thread_count[mutex] = 1;
+	}
+	foreach (mutex in details_thread_count) {
+	    delete mutex_contention_per_thread[tid, mutex];
+	}
+	delete details_thread_count;
+    }
+    if (expensive_checks) {
+	foreach([key, cond] in cond_wait) {
+	    if (key == tid)
+		details_thread_count[cond] = 1;
+	}
+	foreach (cond in details_thread_count) {
+	    if (!actually_expected)
+		unexpected_condition("cond_wait",
+				     tid, cond, cond_init[cond] == -1);
+	    delete cond_wait[tid, cond];
+	}
+	delete details_thread_count;
+	foreach([key, mutex] in mutex_wait) {
+	    if (key == tid)
+		details_thread_count[mutex] = 1;
+	}
+	foreach (mutex in details_thread_count) {
+	    if (!actually_expected)
+		unexpected_condition("mutex_wait",
+				     tid, mutex, mutex_init[mutex] == -1);
+	    delete mutex_wait[tid, mutex];
+	}
+	delete details_thread_count;
+	foreach([key, cond] in cond_wait_timer) {
+	    if (key == tid)
+		details_thread_count[cond] = 1;
+	}
+	foreach (cond in details_thread_count) {
+	    if (!actually_expected)
+		unexpected_condition("cond_wait_timer",
+				     tid, cond, cond_init[cond] == -1);
+	    delete cond_wait_timer[tid, cond];
+	}
+	delete details_thread_count;
+    }
+    if (verbose) {
+	foreach([key, cond] in cond_broadcast_per_thread) {
+	    if (key == tid)
+		details_thread_count[cond] = 1;
+	}
+	foreach (tid in details_thread_count) {
+	    delete cond_broadcast_per_thread[tid, cond];
+	}
+	delete details_thread_count;
+	foreach([key, cond] in cond_signal_per_thread) {
+	    if (key == tid)
+		details_thread_count[cond] = 1;
+	}
+	foreach (tid in details_thread_count) {
+	    delete cond_signal_per_thread[tid, cond];
+	}
+	delete details_thread_count;
+	foreach([key, cond] in cond_wait_per_thread) {
+	    if (key == tid)
+		details_thread_count[cond] = 1;
+	}
+	foreach (tid in details_thread_count) {
+	    delete cond_wait_per_thread[tid, cond];
+	}
+	delete details_thread_count;
+    }
+    if (expensive_checks) {
+	foreach([key, rwlock] in rdlock_entry) {
+	    if (key == tid)
+		details_thread_count[rwlock] = 1;
+	}
+	foreach (rwlock in details_thread_count) {
+	    if (!actually_expected)
+		unexpected_condition("rdlock_entry",
+				     tid, rwlock, rwlock_init[rwlock] == -1);
+	    delete rdlock_entry[tid, rwlock];
+	}
+	delete details_thread_count;
+	foreach([key, rwlock] in rdlock_entry_timer) {
+	    if (key == tid)
+		details_thread_count[rwlock] = 1;
+	}
+	foreach (rwlock in details_thread_count) {
+	    if (!actually_expected)
+		unexpected_condition("rdlock_entry_timer",
+				     tid, rwlock, rwlock_init[rwlock] == -1);
+	    delete rdlock_entry_timer[tid, rwlock];
+	}
+	delete details_thread_count;
+	foreach([key, rwlock] in wrlock_entry) {
+	    if (key == tid)
+		details_thread_count[rwlock] = 1;
+	}
+	foreach (rwlock in details_thread_count) {
+	    if (!actually_expected)
+		unexpected_condition("wrlock_entry",
+				     tid, rwlock, rwlock_init[rwlock] == -1);
+	    delete wrlock_entry[tid, rwlock];
+	}
+	delete details_thread_count;
+	foreach([key, rwlock] in wrlock_entry_timer) {
+	    if (key == tid)
+		details_thread_count[rwlock] = 1;
+	}
+	foreach (rwlock in details_thread_count) {
+	    if (!actually_expected)
+		unexpected_condition("wrlock_entry_timer",
+				     tid, rwlock, rwlock_init[rwlock] == -1);
+	    delete wrlock_entry_timer[tid, rwlock];
+	}
+	delete details_thread_count;
+    }
+    if (verbose) {
+	foreach([key, rwlock] in rdlock_contention_per_thread) {
+	    if (key == tid)
+		details_thread_count[rwlock] = 1;
+	}
+	foreach (rwlock in details_thread_count) {
+	    delete rdlock_contention_per_thread[tid, rwlock];
+	}
+	delete details_thread_count;
+	foreach([key, rwlock] in wrlock_contention_per_thread) {
+	    if (key == tid)
+		details_thread_count[rwlock] = 1;
+	}
+	foreach (rwlock in details_thread_count) {
+	    delete wrlock_contention_per_thread[tid, rwlock];
+	}
+	delete details_thread_count;
+    }
+    if (expensive_checks) {
+	foreach([key, spin] in spin_entry) {
+	    if (key == tid)
+		details_thread_count[spin] = 1;
+	}
+	foreach (spin in details_thread_count) {
+	    if (!actually_expected)
+		unexpected_condition("spin_entry",
+				     tid, spin, spin_init[spin] == -1);
+	    delete spin_entry[tid, spin];
+	}
+	delete details_thread_count;
+    }
+    if (verbose) {
+	foreach([key, spin] in spin_contention_per_thread) {
+	    if (key == tid)
+		details_thread_count[spin] = 1;
+	}
+	foreach (mutex in details_thread_count) {
+	    delete spin_contention_per_thread[tid, spin];
+	}
+	delete details_thread_count;
+    }
+    return 1;
+}
+
+probe
+kprocess.release {
+    if (pid() != target())
+	next;
+    /* If reused and new instance is exiting. */
+    force = uncertain_tids[released_tid];
+    uncertain = forget_tid(released_tid, force) == 0;
+    now = gettimeofday_us();
+    foreach (tid in uncertain_tids) {
+	/* Auto remove from list if exited 30 or more seconds ago */
+	if (now - uncertain_tids[tid] > 1000000 * 30) {
+	    details_thread_count[tid] = 1;
+	    forget_tid(tid, 1);
+	}
+    }
+    foreach (tid in details_thread_count)
+	delete uncertain_tids[tid];
+    delete details_thread_count;
+    if (uncertain)
+	uncertain_tids[released_tid] = now;
 }
 
 probe
@@ -1745,6 +1983,22 @@ forget_spinlock(spin) {
 
 function
 check_memory_reuse(pointer, type) {
+    if (thread_to_tid[pointer]) {
+	tid = thread_to_tid[pointer];
+	if (expensive_checks && !uncertain_tids[tid]) {
+	    if (exited_tids[tid])
+		printf("exited ");
+	    else if (joined_tids[tid])
+		printf("joined ");
+	    else if (canceled_tids[tid])
+		printf("canceled ");
+	    printf("tid %ld thread %p reused", tid, pointer);
+	    if (type != "thread")
+		printf(" as a %s", type);
+	    printf("\n");
+	}
+	forget_tid(thread_to_tid[pointer], 1);
+    }
     if (mutex_init[pointer]) {
 	if (expensive_checks && mutex_init[pointer] != -1) {
 	    printf("mutex %p reused", pointer);
@@ -2291,6 +2545,10 @@ probe kprocess.exec_complete {
 function reset() {
     delete tid_to_thread;
     delete thread_to_tid;
+    delete exited_tids;
+    delete joined_tids;
+    delete canceled_tids;
+    delete uncertain_tids;
     if (verbose) {
 	delete thread_name;
 	delete mutex_contention_total_time;
