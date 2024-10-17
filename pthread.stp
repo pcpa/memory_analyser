@@ -538,6 +538,93 @@ global start_gdbserver = 0;
 global gdbserver_port = 1234;
 global binary_path_for_gdbserver = "";
 
+// For RHEL8 use 2.28
+@define GLIBC			%( "2.39" %)
+%( @GLIBC < "2.39" %?
+  @define PTHREAD_PATH		%( "/lib64/libpthread.so.0" %) %:
+  @define PTHREAD_PATH		%( "/lib64/libc.so.6" %) %)
+@define	_pthread_create		%( "__pthread_create_2_1" %)
+%( @GLIBC < "2.39" %?
+  @define _pthread_setname_np	%( "pthread_setname_np" %) %:
+  @define _pthread_setname_np	%( "__pthread_setname_np" %) %)
+@define	_pthread_cancel		%( "__pthread_cancel" %)
+@define	_pthread_testcancel	%( "__pthread_testcancel" %)
+%( @GLIBC < "2.39" %?
+  @define _pthread_detach	%( "__pthread_detach" %) %:
+  @define _pthread_detach	%( "___pthread_detach" %) %)
+@define	_pthread_exit		%( "__pthread_exit" %)
+%( @GLIBC < "2.39" %?
+  @define _pthread_join		%( "__pthread_join" %) %:
+  @define _pthread_join		%( "___pthread_join" %) %)
+@define	_pthread_kill		%( "__pthread_kill" %)
+@define	_pthread_mutex_init	%( "__pthread_mutex_init" %)
+@define	_pthread_mutex_trylock	%( "__pthread_mutex_trylock" %)
+%( @GLIBC < "2.39" %?
+  @define _pthread_mutex_timedlock	%( "__pthread_mutex_timedlock" %) %:
+  @define _pthread_mutex_timedlock	%( "___pthread_mutex_timedlock" %) %)
+@define	_pthread_mutex_lock	%( "__pthread_mutex_lock" %)
+%( @GLIBC < "2.39" %?
+  @define _pthread_mutex_consistent	%( "pthread_mutex_consistent" %) %:
+  @define _pthread_mutex_consistent	%( "__pthread_mutex_consistent" %) %)
+%( @GLIBC < "2.39" %?
+  @define _pthread_mutex_getprioceiling	%( "pthread_mutex_getprioceiling" %) %:
+  @define _pthread_mutex_getprioceiling	%( "__pthread_mutex_getprioceiling" %) %)
+%( @GLIBC < "2.39" %?
+  @define _pthread_mutex_setprioceiling	%( "pthread_mutex_setprioceiling" %) %:
+  @define _pthread_mutex_setprioceiling	%( "__pthread_mutex_setprioceiling" %) %)
+@define	_pthread_mutex_unlock	%( "__pthread_mutex_unlock" %)
+@define	_pthread_mutex_destroy	%( "__pthread_mutex_destroy" %)
+@define	_pthread_cond_init	%( "__pthread_cond_init" %)
+%( @GLIBC < "2.39" %?
+  @define _pthread_cond_broadcast	%( "__pthread_cond_broadcast" %) %:
+  @define _pthread_cond_broadcast	%( "___pthread_cond_broadcast" %) %)
+%( @GLIBC < "2.39" %?
+  @define _pthread_cond_signal	%( "__pthread_cond_signal" %) %:
+  @define _pthread_cond_signal	%( "___pthread_cond_signal" %) %)
+%( @GLIBC < "2.39" %?
+  @define _pthread_cond_wait	%( "__pthread_cond_wait" %) %:
+  @define _pthread_cond_wait	%( "___pthread_cond_wait" %) %)
+%( @GLIBC < "2.39" %?
+  @define _pthread_cond_timedwait	%( "__pthread_cond_timedwait" %) %:
+  @define _pthread_cond_timedwait	%( "___pthread_cond_timedwait" %) %)
+@define	_pthread_cond_destroy	%( "__pthread_cond_destroy" %)
+@define	_pthread_rwlock_init	%( "__pthread_rwlock_init" %)
+@define	_pthread_rwlock_rdlock	%( "__pthread_rwlock_rdlock" %)
+@define	_pthread_rwlock_tryrdlock	%( "__pthread_rwlock_tryrdlock" %)
+%( @GLIBC < "2.39" %?
+  @define _pthread_rwlock_timedrdlock	%( "pthread_rwlock_timedrdlock" %) %:
+  @define _pthread_rwlock_timedrdlock	%( "___pthread_rwlock_timedrdlock" %) %)
+@define	_pthread_rwlock_wrlock	%( "__pthread_rwlock_wrlock" %)
+@define	_pthread_rwlock_trywrlock	%( "__pthread_rwlock_trywrlock" %)
+%( @GLIBC < "2.39" %?
+  @define _pthread_rwlock_timedwrlock	%( "pthread_rwlock_timedwrlock" %) %:
+  @define _pthread_rwlock_timedwrlock	%( "___pthread_rwlock_timedwrlock" %) %)
+@define	_pthread_rwlock_unlock	%( "__pthread_rwlock_unlock" %)
+@define	_pthread_rwlock_destroy	%( "__pthread_rwlock_destroy" %)
+@define	_pthread_spin_init	%( "pthread_spin_init" %)
+%( @GLIBC < "2.39" %?
+  @define _pthread_spin_lock	%( "pthread_spin_lock" %) %:
+  @define _pthread_spin_lock	%( "__pthread_spin_lock" %) %)
+%( @GLIBC < "2.39" %?
+  @define _pthread_spin_trylock	%( "pthread_spin_trylock" %) %:
+  @define _pthread_spin_trylock	%( "__pthread_spin_trylock" %) %)
+%( @GLIBC < "2.39" %?
+  @define _pthread_spin_unlock	%( "pthread_spin_unlock" %) %:
+  @define _pthread_spin_unlock	%( "__pthread_spin_unlock" %) %)
+%( @GLIBC < "2.39" %?
+  @define _pthread_spin_destroy	%( "pthread_spin_destroy" %) %:
+  @define _pthread_spin_destroy	%( "__pthread_spin_destroy" %) %)
+%( @GLIBC < "2.39" %?
+  @define _pthread_barrier_init	%( "__pthread_barrier_init" %) %:
+  @define _pthread_barrier_init	%( "___pthread_barrier_init" %) %)
+%( @GLIBC < "2.39" %?
+  @define _pthread_barrier_wait	%( "__pthread_barrier_wait" %) %:
+  @define _pthread_barrier_wait	%( "___pthread_barrier_wait" %) %)
+%( @GLIBC < "2.39" %?
+  @define _pthread_barrier_destroy	%( "pthread_barrier_destroy" %) %:
+  @define _pthread_barrier_destroy	%( "__pthread_barrier_destroy" %) %)
+
+
 @define	PTHREAD_BARRIER_SERIAL_THREAD %( -1 %)
 @define	EPERM			%(   1 %)
 @define EAGAIN			%(  11 %)
@@ -648,11 +735,7 @@ function unexpected_condition(variable:string, tid:long, pointer:long,
 }
 
 probe
-process("/lib64/libc.so.6").function("__pthread_create").return !,
-process("/lib64/libc.so.6").function("pthread_create").return !,
-process("/lib64/libpthread.so.0").function("__pthread_create").return !,
-process("/lib64/libpthread.so.0").function("pthread_create").return !,
-process("/lib64/libpthread.so.0").function("__pthread_create_2_1").return {
+process(@PTHREAD_PATH).function(@_pthread_create).return {
     if (pid() != target())
 	next;
     result	= @RETURN;
@@ -686,8 +769,7 @@ process("/lib64/libpthread.so.0").function("__pthread_create_2_1").return {
 }
 /* Use "mark" instead of too fragile offset computation as example above. */
 probe
-process("/lib64/libc.so.6").mark("pthread_start") !,
-process("/lib64/libpthread.so.0").mark("pthread_start") {
+process(@PTHREAD_PATH).mark("pthread_start") {
     if (pid() != target())
 	next;
     thread	= $arg1;
@@ -701,10 +783,7 @@ process("/lib64/libpthread.so.0").mark("pthread_start") {
 }
 
 probe
-process("/lib64/libc.so.6").function("__pthread_setname_np").return !,
-process("/lib64/libc.so.6").function("pthread_setname_np").return !,
-process("/lib64/libpthread.so.0").function("__pthread_setname_np").return !,
-process("/lib64/libpthread.so.0").function("pthread_setname_np").return {
+process(@PTHREAD_PATH).function(@_pthread_setname_np).return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -719,10 +798,7 @@ process("/lib64/libpthread.so.0").function("pthread_setname_np").return {
 }
 
 probe
-process("/lib64/libc.so.6").function("__pthread_cancel").return !,
-process("/lib64/libc.so.6").function("pthread_cancel").return !,
-process("/lib64/libpthread.so.0").function("__pthread_cancel").return !,
-process("/lib64/libpthread.so.0").function("pthread_cancel").return {
+process(@PTHREAD_PATH).function(@_pthread_cancel).return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -736,20 +812,14 @@ process("/lib64/libpthread.so.0").function("pthread_cancel").return {
 
 /*
 probe
-process("/lib64/libc.so.6").function("__pthread_testcancel") !,
-process("/lib64/libc.so.6").function("pthread_testcancel") !,
-process("/lib64/libpthread.so.0").function("__pthread_testcancel") !,
-process("/lib64/libpthread.so.0").function("pthread_testcancel") {
+process(@PTHREAD_PATH).function(@_pthread_testcancel) {
     if (pid() != target())
 	next;
 }
  */
 
 probe
-process("/lib64/libc.so.6").function("__pthread_detach").return !,
-process("/lib64/libc.so.6").function("pthread_detach").return !,
-process("/lib64/libpthread.so.0").function("__pthread_detach").return !,
-process("/lib64/libpthread.so.0").function("pthread_detach").return {
+process(@PTHREAD_PATH).function(@_pthread_detach).return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -761,10 +831,7 @@ process("/lib64/libpthread.so.0").function("pthread_detach").return {
 }
 
 probe
-process("/lib64/libc.so.6").function("__pthread_exit") !,
-process("/lib64/libc.so.6").function("pthread_exit") !,
-process("/lib64/libpthread.so.0").function("__pthread_exit") !,
-process("/lib64/libpthread.so.0").function("pthread_exit") {
+process(@PTHREAD_PATH).function(@_pthread_exit) {
     if (pid() != target())
 	next;
     thread = tid_to_thread[tid()];
@@ -776,10 +843,7 @@ process("/lib64/libpthread.so.0").function("pthread_exit") {
 }
 
 probe
-process("/lib64/libc.so.6").function("__pthread_join").return !,
-process("/lib64/libc.so.6").function("pthread_join").return !,
-process("/lib64/libpthread.so.0").function("__pthread_join").return !,
-process("/lib64/libpthread.so.0").function("pthread_join").return {
+process(@PTHREAD_PATH).function(@_pthread_join).return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -797,10 +861,7 @@ process("/lib64/libpthread.so.0").function("pthread_join").return {
 }
 
 probe
-process("/lib64/libc.so.6").function("__pthread_kill").return !,
-process("/lib64/libc.so.6").function("pthread_kill").return !,
-process("/lib64/libpthread.so.0").function("__pthread_kill").return !,
-process("/lib64/libcpthread.so.0").function("pthread_kill").return {
+process(@PTHREAD_PATH).function(@_pthread_kill).return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -1122,10 +1183,7 @@ kprocess.release {
 }
 
 probe
-process("/lib64/libc.so.6").function("__pthread_mutex_init").return !,
-process("/lib64/libc.so.6").function("pthread_mutex_init").return !,
-process("/lib64/libpthread.so.0").function("__pthread_mutex_init").return !,
-process("/lib64/libpthread.so.0").function("pthread_mutex_init").return {
+process(@PTHREAD_PATH).function(@_pthread_mutex_init).return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -1181,10 +1239,7 @@ function common_mutex_lock(mutex, istry, tmout, result) {
 }
 
 probe
-process("/lib64/libc.so.6").function("__pthread_mutex_trylock") !,
-process("/lib64/libc.so.6").function("pthread_mutex_trylock") !,
-process("/lib64/libpthread.so.0").function("__pthread_mutex_trylock") !,
-process("/lib64/libpthread.so.0").function("pthread_mutex_trylock") {
+process(@PTHREAD_PATH).function(@_pthread_mutex_trylock) {
     if (pid() != target())
 	next;
     mutex = @ARG1;
@@ -1192,10 +1247,7 @@ process("/lib64/libpthread.so.0").function("pthread_mutex_trylock") {
 }
 
 probe
-process("/lib64/libc.so.6").function("__pthread_mutex_trylock").return !,
-process("/lib64/libc.so.6").function("pthread_mutex_trylock").return !,
-process("/lib64/libpthread.so.0").function("__pthread_mutex_trylock").return !,
-process("/lib64/libpthread.so.0").function("pthread_mutex_trylock").return {
+process(@PTHREAD_PATH).function(@_pthread_mutex_trylock).return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -1204,10 +1256,7 @@ process("/lib64/libpthread.so.0").function("pthread_mutex_trylock").return {
 }
 
 probe
-process("/lib64/libc.so.6").function("__pthread_mutex_timedlock") !,
-process("/lib64/libc.so.6").function("pthread_mutex_timedlock") !,
-process("/lib64/libpthread.so.0").function("__pthread_mutex_timedlock") !,
-process("/lib64/libpthread.so.0").function("pthread_mutex_timedlock") {
+process(@PTHREAD_PATH).function(@_pthread_mutex_timedlock) {
     if (pid() != target())
 	next;
     mutex = @ARG1;
@@ -1217,10 +1266,7 @@ process("/lib64/libpthread.so.0").function("pthread_mutex_timedlock") {
 }
 
 probe
-process("/lib64/libc.so.6").function("__pthread_mutex_timedlock").return !,
-process("/lib64/libc.so.6").function("pthread_mutex_timedlock").return !,
-process("/lib64/libpthread.so.0").function("__pthread_mutex_timedlock").return !,
-process("/lib64/libpthread.so.0").function("pthread_mutex_timedlock").return {
+process(@PTHREAD_PATH).function(@_pthread_mutex_timedlock).return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -1230,10 +1276,7 @@ process("/lib64/libpthread.so.0").function("pthread_mutex_timedlock").return {
 }
 
 probe
-process("/lib64/libc.so.6").function("__pthread_mutex_lock") !,
-process("/lib64/libc.so.6").function("pthread_mutex_lock") !,
-process("/lib64/libpthread.so.0").function("__pthread_mutex_lock") !,
-process("/lib64/libpthread.so.0").function("pthread_mutex_lock") {
+process(@PTHREAD_PATH).function(@_pthread_mutex_lock) {
     if (pid() != target())
 	next;
     mutex = @ARG1;
@@ -1241,10 +1284,7 @@ process("/lib64/libpthread.so.0").function("pthread_mutex_lock") {
 }
 
 probe
-process("/lib64/libc.so.6").function("__pthread_mutex_lock").return !,
-process("/lib64/libc.so.6").function("pthread_mutex_lock").return !,
-process("/lib64/libpthread.so.0").function("__pthread_mutex_lock").return !,
-process("/lib64/libpthread.so.0").function("pthread_mutex_lock").return {
+process(@PTHREAD_PATH).function(@_pthread_mutex_lock).return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -1253,10 +1293,7 @@ process("/lib64/libpthread.so.0").function("pthread_mutex_lock").return {
 }
 
 probe
-process("/lib64/libc.so.6").function("__pthread_mutex_consistent").return !,
-process("/lib64/libc.so.6").function("pthread_mutex_consistent").return !,
-process("/lib64/libpthread.so.0").function("__pthread_mutex_consistent").return !,
-process("/lib64/libpthread.so.0").function("pthread_mutex_consistent").return {
+process(@PTHREAD_PATH).function(@_pthread_mutex_consistent).return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -1267,12 +1304,8 @@ process("/lib64/libpthread.so.0").function("pthread_mutex_consistent").return {
     mutex_consistent[mutex] = gettimeofday_us();
 }
 
-
 probe
-process("/lib64/libc.so.6").function("__pthread_mutex_getprioceiling").return !,
-process("/lib64/libc.so.6").function("pthread_mutex_getprioceiling").return !,
-process("/lib64/libpthread.so.0").function("__pthread_mutex_getprioceiling").return !,
-process("/lib64/libpthread.so.0").function("pthread_mutex_getprioceiling").return {
+process(@PTHREAD_PATH).function(@_pthread_mutex_getprioceiling).return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -1285,10 +1318,7 @@ process("/lib64/libpthread.so.0").function("pthread_mutex_getprioceiling").retur
 }
 
 probe
-process("/lib64/libc.so.6").function("__pthread_mutex_setprioceiling").return !,
-process("/lib64/libc.so.6").function("pthread_mutex_setprioceiling").return !,
-process("/lib64/libpthread.so.0").function("__pthread_mutex_setprioceiling").return !,
-process("/lib64/libpthread.so.0").function("pthread_mutex_setprioceiling").return {
+process(@PTHREAD_PATH).function(@_pthread_mutex_setprioceiling).return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -1304,10 +1334,7 @@ process("/lib64/libpthread.so.0").function("pthread_mutex_setprioceiling").retur
 }
 
 probe
-process("/lib64/libc.so.6").function("__pthread_mutex_unlock").return !,
-process("/lib64/libc.so.6").function("pthread_mutex_unlock").return !,
-process("/lib64/libpthread.so.0").function("__pthread_mutex_unlock").return !,
-process("/lib64/libpthread.so.0").function("pthread_mutex_unlock").return {
+process(@PTHREAD_PATH).function(@_pthread_mutex_unlock).return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -1386,10 +1413,7 @@ forget_mutex(mutex) {
 }
 
 probe
-process("/lib64/libc.so.6").function("__pthread_mutex_destroy").return !,
-process("/lib64/libc.so.6").function("pthread_mutex_destroy").return !,
-process("/lib64/libpthread.so.0").function("__pthread_mutex_destroy").return !,
-process("/lib64/libpthread.so.0").function("pthread_mutex_destroy").return {
+process(@PTHREAD_PATH).function(@_pthread_mutex_destroy).return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -1403,10 +1427,7 @@ process("/lib64/libpthread.so.0").function("pthread_mutex_destroy").return {
 }
 
 probe
-process("/lib64/libc.so.6").function("__pthread_cond_init").return !,
-process("/lib64/libc.so.6").function("pthread_cond_init").return !,
-process("/lib64/libpthread.so.0").function("__pthread_cond_init").return !,
-process("/lib64/libpthread.so.0").function("pthread_cond_init").return {
+process(@PTHREAD_PATH).function(@_pthread_cond_init).return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -1423,10 +1444,7 @@ process("/lib64/libpthread.so.0").function("pthread_cond_init").return {
 }
 
 probe
-process("/lib64/libc.so.6").function("__pthread_cond_broadcast").return !,
-process("/lib64/libc.so.6").function("pthread_cond_broadcast").return !,
-process("/lib64/libpthread.so.0").function("__pthread_cond_broadcast").return !,
-process("/lib64/libpthread.so.0").function("pthread_cond_broadcast").return {
+process(@PTHREAD_PATH).function(@_pthread_cond_broadcast).return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -1442,12 +1460,7 @@ process("/lib64/libpthread.so.0").function("pthread_cond_broadcast").return {
 }
 
 probe
-process("/lib64/libc.so.6").function("___pthread_cond_signal").return !,
-process("/lib64/libc.so.6").function("__pthread_cond_signal").return !,
-process("/lib64/libc.so.6").function("pthread_cond_signal").return !,
-process("/lib64/libpthread.so.0").function("___pthread_cond_signal").return !,
-process("/lib64/libpthread.so.0").function("__pthread_cond_signal").return !,
-process("/lib64/libpthread.so.0").function("pthread_cond_signal").return {
+process(@PTHREAD_PATH).function(@_pthread_cond_signal).return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -1512,11 +1525,7 @@ common_cond_wait_return(cond, mutex, tmout, result) {
 }
 
 probe
-process("/lib64/libc.so.6").function("___pthread_cond_wait") !,
-process("/lib64/libc.so.6").function("pthread_cond_wait") !,
-process("/lib64/libpthread.so.0").function("___pthread_cond_wait") !,
-process("/lib64/libpthread.so.0").function("pthread_cond_wait") !,
-process("/lib64/libpthread.so.0").function("__pthread_cond_wait_2_0") {
+process(@PTHREAD_PATH).function(@_pthread_cond_wait) {
     if (pid() != target())
 	next;
     cond  = @ARG1;
@@ -1525,11 +1534,7 @@ process("/lib64/libpthread.so.0").function("__pthread_cond_wait_2_0") {
 }
 
 probe
-process("/lib64/libc.so.6").function("___pthread_cond_wait").return !,
-process("/lib64/libc.so.6").function("pthread_cond_wait").return !,
-process("/lib64/libpthread.so.0").function("___pthread_cond_wait").return !,
-process("/lib64/libpthread.so.0").function("pthread_cond_wait").return !,
-process("/lib64/libpthread.so.0").function("__pthread_cond_wait_2_0").return {
+process(@PTHREAD_PATH).function(@_pthread_cond_wait).return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -1539,10 +1544,7 @@ process("/lib64/libpthread.so.0").function("__pthread_cond_wait_2_0").return {
 }
 
 probe
-process("/lib64/libc.so.6").function("__pthread_cond_timedwait") !,
-process("/lib64/libc.so.6").function("pthread_cond_timedwait") !,
-process("/lib64/libpthread.so.0").function("__pthread_cond_timedwait") !,
-process("/lib64/libpthread.so.0").function("pthread_cond_timedwait") {
+process(@PTHREAD_PATH).function(@_pthread_cond_timedwait) {
     if (pid() != target())
 	next;
     cond  = @ARG1;
@@ -1552,10 +1554,7 @@ process("/lib64/libpthread.so.0").function("pthread_cond_timedwait") {
 }
 
 probe
-process("/lib64/libc.so.6").function("__pthread_cond_timedwait").return !,
-process("/lib64/libc.so.6").function("pthread_cond_timedwait").return !,
-process("/lib64/libpthread.so.0").function("__pthread_cond_timedwait").return !,
-process("/lib64/libpthread.so.0").function("pthread_cond_timedwait").return {
+process(@PTHREAD_PATH).function(@_pthread_cond_timedwait).return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -1634,10 +1633,7 @@ forget_condition(cond) {
 }
 
 probe
-process("/lib64/libc.so.6").function("__pthread_cond_destroy").return !,
-process("/lib64/libc.so.6").function("pthread_cond_destroy").return !,
-process("/lib64/libpthread.so.0").function("__pthread_cond_destroy").return !,
-process("/lib64/libpthread.so.0").function("pthread_cond_destroy").return {
+process(@PTHREAD_PATH).function(@_pthread_cond_destroy).return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -1651,10 +1647,7 @@ process("/lib64/libpthread.so.0").function("pthread_cond_destroy").return {
 }
 
 probe
-process("/lib64/libc.so.6").function("__pthread_rwlock_init").return !,
-process("/lib64/libc.so.6").function("pthread_rwlock_init").return !,
-process("/lib64/libpthread.so.0").function("__pthread_rwlock_init").return !,
-process("/lib64/libpthread.so.0").function("pthread_rwlock_init").return {
+process(@PTHREAD_PATH).function(@_pthread_rwlock_init).return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -1705,10 +1698,7 @@ function common_rdlock(rdlock, istry, tmout, result) {
 }
 
 probe
-process("/lib64/libc.so.6").function("__pthread_rwlock_rdlock") !,
-process("/lib64/libc.so.6").function("pthread_rwlock_rdlock") !,
-process("/lib64/libpthread.so.0").function("__pthread_rwlock_rdlock") !,
-process("/lib64/libpthread.so.0").function("pthread_rwlock_rdlock") {
+process(@PTHREAD_PATH).function(@_pthread_rwlock_rdlock) {
     if (pid() != target())
 	next;
     rwlock	= @ARG1;
@@ -1716,10 +1706,7 @@ process("/lib64/libpthread.so.0").function("pthread_rwlock_rdlock") {
 }
 
 probe
-process("/lib64/libc.so.6").function("__pthread_rwlock_rdlock").return !,
-process("/lib64/libc.so.6").function("pthread_rwlock_rdlock").return !,
-process("/lib64/libpthread.so.0").function("__pthread_rwlock_rdlock").return !,
-process("/lib64/libpthread.so.0").function("pthread_rwlock_rdlock").return {
+process(@PTHREAD_PATH).function(@_pthread_rwlock_rdlock).return {
     if (pid() != target())
 	next;
     result	= @RETURN;
@@ -1728,10 +1715,7 @@ process("/lib64/libpthread.so.0").function("pthread_rwlock_rdlock").return {
 }
 
 probe
-process("/lib64/libc.so.6").function("__pthread_rwlock_tryrdlock") !,
-process("/lib64/libc.so.6").function("pthread_rwlock_tryrdlock") !,
-process("/lib64/libpthread.so.0").function("__pthread_rwlock_tryrdlock") !,
-process("/lib64/libpthread.so.0").function("pthread_rwlock_tryrdlock") {
+process(@PTHREAD_PATH).function(@_pthread_rwlock_tryrdlock) {
     if (pid() != target())
 	next;
     rwlock	= @ARG1;
@@ -1739,10 +1723,7 @@ process("/lib64/libpthread.so.0").function("pthread_rwlock_tryrdlock") {
 }
 
 probe
-process("/lib64/libc.so.6").function("__pthread_rwlock_tryrdlock").return !,
-process("/lib64/libc.so.6").function("pthread_rwlock_tryrdlock").return !,
-process("/lib64/libpthread.so.0").function("__pthread_rwlock_tryrdlock").return !,
-process("/lib64/libpthread.so.0").function("pthread_rwlock_tryrdlock").return {
+process(@PTHREAD_PATH).function(@_pthread_rwlock_tryrdlock).return {
     if (pid() != target())
 	next;
     result	= @RETURN;
@@ -1751,10 +1732,7 @@ process("/lib64/libpthread.so.0").function("pthread_rwlock_tryrdlock").return {
 }
 
 probe
-process("/lib64/libc.so.6").function("__pthread_rwlock_timedrdlock") !,
-process("/lib64/libc.so.6").function("pthread_rwlock_timedrdlock") !,
-process("/lib64/libpthread.so.0").function("__pthread_rwlock_timedrdlock") !,
-process("/lib64/libpthread.so.0").function("pthread_rwlock_timedrdlock") {
+process(@PTHREAD_PATH).function(@_pthread_rwlock_timedrdlock) {
 	if (pid() != target())
 	next;
     rwlock	= @ARG1;
@@ -1764,10 +1742,7 @@ process("/lib64/libpthread.so.0").function("pthread_rwlock_timedrdlock") {
 }
 
 probe
-process("/lib64/libc.so.6").function("__pthread_rwlock_timedrdlock").return !,
-process("/lib64/libc.so.6").function("pthread_rwlock_timedrdlock").return !,
-process("/lib64/libpthread.so.0").function("__pthread_rwlock_timedrdlock").return !,
-process("/lib64/libpthread.so.0").function("pthread_rwlock_timedrdlock").return {
+process(@PTHREAD_PATH).function(@_pthread_rwlock_timedrdlock).return {
     if (pid() != target())
 	next;
     result	= @RETURN;
@@ -1811,10 +1786,7 @@ function common_wrlock(wrlock, istry, tmout, result) {
 }
 
 probe
-process("/lib64/libc.so.6").function("__pthread_rwlock_wrlock") !,
-process("/lib64/libc.so.6").function("pthread_rwlock_wrlock") !,
-process("/lib64/libpthread.so.0").function("__pthread_rwlock_wrlock") !,
-process("/lib64/libpthread.so.0").function("pthread_rwlock_wrlock") {
+process(@PTHREAD_PATH).function(@_pthread_rwlock_wrlock) {
     if (pid() != target())
 	next;
     rwlock	= @ARG1;
@@ -1822,10 +1794,7 @@ process("/lib64/libpthread.so.0").function("pthread_rwlock_wrlock") {
 }
 
 probe
-process("/lib64/libc.so.6").function("__pthread_rwlock_wrlock").return !,
-process("/lib64/libc.so.6").function("pthread_rwlock_wrlock").return !,
-process("/lib64/libpthread.so.0").function("__pthread_rwlock_wrlock").return !,
-process("/lib64/libpthread.so.0").function("pthread_rwlock_wrlock").return {
+process(@PTHREAD_PATH).function(@_pthread_rwlock_wrlock).return {
     if (pid() != target())
 	next;
     result	= @RETURN;
@@ -1834,10 +1803,7 @@ process("/lib64/libpthread.so.0").function("pthread_rwlock_wrlock").return {
 }
 
 probe
-process("/lib64/libc.so.6").function("__pthread_rwlock_trywrlock") !,
-process("/lib64/libc.so.6").function("pthread_rwlock_trywrlock") !,
-process("/lib64/libpthread.so.0").function("__pthread_rwlock_trywrlock") !,
-process("/lib64/libpthread.so.0").function("pthread_rwlock_trywrlock") {
+process(@PTHREAD_PATH).function(@_pthread_rwlock_trywrlock) {
     if (pid() != target())
 	next;
     rwlock	= @ARG1;
@@ -1845,10 +1811,7 @@ process("/lib64/libpthread.so.0").function("pthread_rwlock_trywrlock") {
 }
 
 probe
-process("/lib64/libc.so.6").function("__pthread_rwlock_trywrlock").return !,
-process("/lib64/libc.so.6").function("pthread_rwlock_trywrlock").return !,
-process("/lib64/libpthread.so.0").function("__pthread_rwlock_trywrlock").return !,
-process("/lib64/libpthread.so.0").function("pthread_rwlock_trywrlock").return {
+process(@PTHREAD_PATH).function(@_pthread_rwlock_trywrlock).return {
     if (pid() != target())
 	next;
     result	= @RETURN;
@@ -1857,10 +1820,7 @@ process("/lib64/libpthread.so.0").function("pthread_rwlock_trywrlock").return {
 }
 
 probe
-process("/lib64/libc.so.6").function("__pthread_rwlock_timedwrlock") !,
-process("/lib64/libc.so.6").function("pthread_rwlock_timedwrlock") !,
-process("/lib64/libpthread.so.0").function("__pthread_rwlock_timedwrlock") !,
-process("/lib64/libpthread.so.0").function("pthread_rwlock_timedwrlock") {
+process(@PTHREAD_PATH).function(@_pthread_rwlock_timedwrlock) {
     if (pid() != target())
 	next;
     rwlock	= @ARG1;
@@ -1870,10 +1830,7 @@ process("/lib64/libpthread.so.0").function("pthread_rwlock_timedwrlock") {
 }
 
 probe
-process("/lib64/libc.so.6").function("__pthread_rwlock_timedwrlock").return !,
-process("/lib64/libc.so.6").function("pthread_rwlock_timedwrlock").return !,
-process("/lib64/libpthread.so.0").function("__pthread_rwlock_timedwrlock").return !,
-process("/lib64/libpthread.so.0").function("pthread_rwlock_timedwrlock").return {
+process(@PTHREAD_PATH).function(@_pthread_rwlock_timedwrlock).return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -1883,10 +1840,7 @@ process("/lib64/libpthread.so.0").function("pthread_rwlock_timedwrlock").return 
 }
 
 probe
-process("/lib64/libc.so.6").function("__pthread_rwlock_unlock").return !,
-process("/lib64/libc.so.6").function("pthread_rwlock_unlock").return !,
-process("/lib64/libpthread.so.0").function("__pthread_rwlock_unlock").return !,
-process("/lib64/libpthread.so.0").function("pthread_rwlock_unlock").return {
+process(@PTHREAD_PATH).function(@_pthread_rwlock_unlock).return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -2011,10 +1965,7 @@ forget_rwlock(rwlock)
 }
 
 probe
-process("/lib64/libc.so.6").function("__pthread_rwlock_destroy").return !,
-process("/lib64/libc.so.6").function("pthread_rwlock_destroy").return !,
-process("/lib64/libpthread.so.0").function("__pthread_rwlock_destroy").return !,
-process("/lib64/libpthread.so.0").function("pthread_rwlock_destroy").return {
+process(@PTHREAD_PATH).function(@_pthread_rwlock_destroy).return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -2027,10 +1978,7 @@ process("/lib64/libpthread.so.0").function("pthread_rwlock_destroy").return {
 }
 
 probe
-process("/lib64/libc.so.6").function("__pthread_spin_init").return !,
-process("/lib64/libc.so.6").function("pthread_spin_init").return !,
-process("/lib64/libpthread.so.0").function("__pthread_spin_init").return !,
-process("/lib64/libpthread.so.0").function("pthread_spin_init").return {
+process(@PTHREAD_PATH).function(@_pthread_spin_init).return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -2078,10 +2026,7 @@ common_spin_lock(spin, istry, result) {
 }
 
 probe
-process("/lib64/libc.so.6").function("__pthread_spin_lock") !,
-process("/lib64/libc.so.6").function("pthread_spin_lock") !,
-process("/lib64/libpthread.so.0").function("__pthread_spin_lock") !,
-process("/lib64/libpthread.so.0").function("pthread_spin_lock") {
+process(@PTHREAD_PATH).function(@_pthread_spin_lock) {
     if (pid() != target())
 	next;
     spin	= @ARG1;
@@ -2089,10 +2034,7 @@ process("/lib64/libpthread.so.0").function("pthread_spin_lock") {
 }
 
 probe
-process("/lib64/libc.so.6").function("__pthread_spin_lock").return !,
-process("/lib64/libc.so.6").function("pthread_spin_lock").return !,
-process("/lib64/libpthread.so.0").function("__pthread_spin_lock").return !,
-process("/lib64/libpthread.so.0").function("pthread_spin_lock").return {
+process(@PTHREAD_PATH).function(@_pthread_spin_lock).return {
     if (pid() != target())
 	next;
     result	= @RETURN;
@@ -2101,10 +2043,7 @@ process("/lib64/libpthread.so.0").function("pthread_spin_lock").return {
 }
 
 probe
-process("/lib64/libc.so.6").function("__pthread_spin_trylock") !,
-process("/lib64/libc.so.6").function("pthread_spin_trylock") !,
-process("/lib64/libpthread.so.0").function("__pthread_spin_trylock") !,
-process("/lib64/libpthread.so.0").function("pthread_spin_trylock") {
+process(@PTHREAD_PATH).function(@_pthread_spin_trylock) {
     if (pid() != target())
 	next;
     spin	= @ARG1;
@@ -2112,10 +2051,7 @@ process("/lib64/libpthread.so.0").function("pthread_spin_trylock") {
 }
 
 probe
-process("/lib64/libc.so.6").function("__pthread_spin_trylock").return !,
-process("/lib64/libc.so.6").function("pthread_spin_trylock").return !,
-process("/lib64/libpthread.so.0").function("__pthread_spin_trylock").return !,
-process("/lib64/libpthread.so.0").function("pthread_spin_trylock").return {
+process(@PTHREAD_PATH).function(@_pthread_spin_trylock).return {
     if (pid() != target())
 	next;
     result	= @RETURN;
@@ -2124,10 +2060,7 @@ process("/lib64/libpthread.so.0").function("pthread_spin_trylock").return {
 }
 
 probe
-process("/lib64/libc.so.6").function("__pthread_spin_unlock").return !,
-process("/lib64/libc.so.6").function("pthread_spin_unlock").return !,
-process("/lib64/libpthread.so.0").function("__pthread_spin_unlock").return !,
-process("/lib64/libpthread.so.0").function("pthread_spin_unlock").return {
+process(@PTHREAD_PATH).function(@_pthread_spin_unlock).return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -2187,10 +2120,7 @@ forget_spinlock(spin) {
 }
 
 probe
-process("/lib64/libc.so.6").function("__pthread_spin_destroy").return !,
-process("/lib64/libc.so.6").function("pthread_spin_destroy").return !,
-process("/lib64/libpthread.so.0").function("__pthread_spin_destroy").return !,
-process("/lib64/libpthread.so.0").function("pthread_spin_destroy").return {
+process(@PTHREAD_PATH).function(@_pthread_spin_destroy).return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -2203,10 +2133,7 @@ process("/lib64/libpthread.so.0").function("pthread_spin_destroy").return {
 }
 
 probe
-process("/lib64/libc.so.6").function("__pthread_barrier_init").return !,
-process("/lib64/libc.so.6").function("pthread_barrier_init").return !,
-process("/lib64/libpthread.so.0").function("__pthread_barrier_init").return !,
-process("/lib64/libpthread.so.0").function("pthread_barrier_init").return {
+process(@PTHREAD_PATH).function(@_pthread_barrier_init).return {
     if (pid() != target())
 	next;
     result = @RETURN;
@@ -2223,10 +2150,7 @@ process("/lib64/libpthread.so.0").function("pthread_barrier_init").return {
 }
 
 probe
-process("/lib64/libc.so.6").function("__pthread_barrier_wait") !,
-process("/lib64/libc.so.6").function("pthread_barrier_wait") !,
-process("/lib64/libpthread.so.0").function("__pthread_barrier_wait") !,
-process("/lib64/libpthread.so.0").function("pthread_barrier_wait") {
+process(@PTHREAD_PATH).function(@_pthread_barrier_wait) {
     if (pid() != target())
 	next;
     barrier	= @ARG1;
@@ -2234,10 +2158,7 @@ process("/lib64/libpthread.so.0").function("pthread_barrier_wait") {
 }
 
 probe
-process("/lib64/libc.so.6").function("__pthread_barrier_wait").return !,
-process("/lib64/libc.so.6").function("pthread_barrier_wait").return !,
-process("/lib64/libpthread.so.0").function("__pthread_barrier_wait").return !,
-process("/lib64/libpthread.so.0").function("pthread_barrier_wait").return {
+process(@PTHREAD_PATH).function(@_pthread_barrier_wait).return {
     if (pid() != target())
 	next;
     result	= @RETURN;
@@ -2298,10 +2219,7 @@ forget_barrier(barrier) {
 }
 
 probe
-process("/lib64/libc.so.6").function("__pthread_barrier_destroy").return !,
-process("/lib64/libc.so.6").function("pthread_barrier_destroy").return !,
-process("/lib64/libpthread.so.0").function("__pthread_barrier_destroy").return !,
-process("/lib64/libpthread.so.0").function("pthread_barrier_destroy").return {
+process(@PTHREAD_PATH).function(@_pthread_barrier_destroy).return {
     if (pid() != target())
 	next;
     result = @RETURN;
