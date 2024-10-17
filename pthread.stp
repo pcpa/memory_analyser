@@ -795,29 +795,26 @@ process("/lib64/libc.so.6").function("pthread_kill").return {
 }
 
 function
-forget_tid(tid, force) {
-    if (exited_tids[tid])
-	delete exited_tids[tid];
-    else if (joined_tids[tid])
-	delete joined_tids[tid];
-    else if (canceled_tids[tid])
-	delete canceled_tids[tid];
-    else if (!force)
-	return 0;
-    delete thread_to_tid[tid_to_thread[tid]];
+unexpected_deleting_detail(tid) {
+    printf("Deleting tid %ld", tid);
     if (verbose)
-	delete thread_name[tid_to_thread[tid]];
-    delete tid_to_thread[tid];
+	printf(" thread %p", tid_to_thread[tid]);
+    printf(". ");
+}
+
+function
+forget_tid_mutexes(tid, actually_expected) {
     if (expensive_checks) {
-	actually_expected = !!uncertain_tids[tid];
 	foreach([key, mutex] in mutex_lock_entry) {
 	    if (key == tid)
 		details_thread_count[mutex] = 1;
 	}
 	foreach (mutex in details_thread_count) {
-	    if (!actually_expected)
+	    if (!actually_expected) {
+		unexpected_deleting_detail(tid);
 		unexpected_condition("mutex_lock_entry",
 				     tid, mutex, mutex_init[mutex] == -1);
+	    }
 	    delete mutex_lock_entry[tid, mutex];
 	}
 	delete details_thread_count;
@@ -826,9 +823,11 @@ forget_tid(tid, force) {
 		details_thread_count[mutex] = 1;
 	}
 	foreach (mutex in details_thread_count) {
-	    if (!actually_expected)
+	    if (!actually_expected) {
+		unexpected_deleting_detail(tid);
 		unexpected_condition("mutex_lock_entry_timer",
 				     tid, mutex, mutex_init[mutex] == -1);
+	    }
 	    delete mutex_lock_entry_timer[tid, mutex];
 	}
 	delete details_thread_count;
@@ -843,15 +842,21 @@ forget_tid(tid, force) {
 	}
 	delete details_thread_count;
     }
+}
+
+function
+forget_tid_conds(tid, actually_expected) {
     if (expensive_checks) {
 	foreach([key, cond] in cond_wait) {
 	    if (key == tid)
 		details_thread_count[cond] = 1;
 	}
 	foreach (cond in details_thread_count) {
-	    if (!actually_expected)
+	    if (!actually_expected) {
+		unexpected_deleting_detail(tid);
 		unexpected_condition("cond_wait",
 				     tid, cond, cond_init[cond] == -1);
+	    }
 	    delete cond_wait[tid, cond];
 	}
 	delete details_thread_count;
@@ -860,9 +865,11 @@ forget_tid(tid, force) {
 		details_thread_count[mutex] = 1;
 	}
 	foreach (mutex in details_thread_count) {
-	    if (!actually_expected)
+	    if (!actually_expected) {
+		unexpected_deleting_detail(tid);
 		unexpected_condition("mutex_wait",
 				     tid, mutex, mutex_init[mutex] == -1);
+	    }
 	    delete mutex_wait[tid, mutex];
 	}
 	delete details_thread_count;
@@ -871,9 +878,11 @@ forget_tid(tid, force) {
 		details_thread_count[cond] = 1;
 	}
 	foreach (cond in details_thread_count) {
-	    if (!actually_expected)
+	    if (!actually_expected) {
+		unexpected_deleting_detail(tid);
 		unexpected_condition("cond_wait_timer",
 				     tid, cond, cond_init[cond] == -1);
+	    }
 	    delete cond_wait_timer[tid, cond];
 	}
 	delete details_thread_count;
@@ -904,15 +913,21 @@ forget_tid(tid, force) {
 	}
 	delete details_thread_count;
     }
+}
+
+function
+forget_tid_rdlocks(tid, actually_expected) {
     if (expensive_checks) {
 	foreach([key, rwlock] in rdlock_entry) {
 	    if (key == tid)
 		details_thread_count[rwlock] = 1;
 	}
 	foreach (rwlock in details_thread_count) {
-	    if (!actually_expected)
+	    if (!actually_expected) {
+		unexpected_deleting_detail(tid);
 		unexpected_condition("rdlock_entry",
 				     tid, rwlock, rwlock_init[rwlock] == -1);
+	    }
 	    delete rdlock_entry[tid, rwlock];
 	}
 	delete details_thread_count;
@@ -921,32 +936,12 @@ forget_tid(tid, force) {
 		details_thread_count[rwlock] = 1;
 	}
 	foreach (rwlock in details_thread_count) {
-	    if (!actually_expected)
+	    if (!actually_expected) {
+		unexpected_deleting_detail(tid);
 		unexpected_condition("rdlock_entry_timer",
 				     tid, rwlock, rwlock_init[rwlock] == -1);
+	    }
 	    delete rdlock_entry_timer[tid, rwlock];
-	}
-	delete details_thread_count;
-	foreach([key, rwlock] in wrlock_entry) {
-	    if (key == tid)
-		details_thread_count[rwlock] = 1;
-	}
-	foreach (rwlock in details_thread_count) {
-	    if (!actually_expected)
-		unexpected_condition("wrlock_entry",
-				     tid, rwlock, rwlock_init[rwlock] == -1);
-	    delete wrlock_entry[tid, rwlock];
-	}
-	delete details_thread_count;
-	foreach([key, rwlock] in wrlock_entry_timer) {
-	    if (key == tid)
-		details_thread_count[rwlock] = 1;
-	}
-	foreach (rwlock in details_thread_count) {
-	    if (!actually_expected)
-		unexpected_condition("wrlock_entry_timer",
-				     tid, rwlock, rwlock_init[rwlock] == -1);
-	    delete wrlock_entry_timer[tid, rwlock];
 	}
 	delete details_thread_count;
     }
@@ -959,6 +954,40 @@ forget_tid(tid, force) {
 	    delete rdlock_contention_per_thread[tid, rwlock];
 	}
 	delete details_thread_count;
+    }
+}
+
+function
+forget_tid_wrlocks(tid, actually_expected) {
+    if (expensive_checks) {
+	foreach([key, rwlock] in wrlock_entry) {
+	    if (key == tid)
+		details_thread_count[rwlock] = 1;
+	}
+	foreach (rwlock in details_thread_count) {
+	    if (!actually_expected) {
+		unexpected_deleting_detail(tid);
+		unexpected_condition("wrlock_entry",
+				     tid, rwlock, rwlock_init[rwlock] == -1);
+	    }
+	    delete wrlock_entry[tid, rwlock];
+	}
+	delete details_thread_count;
+	foreach([key, rwlock] in wrlock_entry_timer) {
+	    if (key == tid)
+		details_thread_count[rwlock] = 1;
+	}
+	foreach (rwlock in details_thread_count) {
+	    if (!actually_expected) {
+		unexpected_deleting_detail(tid);
+		unexpected_condition("wrlock_entry_timer",
+				     tid, rwlock, rwlock_init[rwlock] == -1);
+	    }
+	    delete wrlock_entry_timer[tid, rwlock];
+	}
+	delete details_thread_count;
+    }
+    if (verbose) {
 	foreach([key, rwlock] in wrlock_contention_per_thread) {
 	    if (key == tid)
 		details_thread_count[rwlock] = 1;
@@ -968,15 +997,21 @@ forget_tid(tid, force) {
 	}
 	delete details_thread_count;
     }
+}
+
+function
+forget_tid_spins(tid, actually_expected) {
     if (expensive_checks) {
 	foreach([key, spin] in spin_entry) {
 	    if (key == tid)
 		details_thread_count[spin] = 1;
 	}
 	foreach (spin in details_thread_count) {
-	    if (!actually_expected)
+	    if (!actually_expected) {
+		unexpected_deleting_detail(tid);
 		unexpected_condition("spin_entry",
 				     tid, spin, spin_init[spin] == -1);
+	    }
 	    delete spin_entry[tid, spin];
 	}
 	delete details_thread_count;
@@ -991,15 +1026,21 @@ forget_tid(tid, force) {
 	}
 	delete details_thread_count;
     }
+}
+
+function
+forget_tid_barriers(tid, actually_expected) {
     if (expensive_checks) {
 	foreach([key, barrier] in barrier_entry) {
 	    if (key == tid)
 		details_thread_count[barrier] = 1;
 	}
 	foreach (barrier in details_thread_count) {
-	    if (!actually_expected)
+	    if (!actually_expected) {
+		unexpected_deleting_detail(tid);
 		unexpected_condition("barrier_entry",
-				     tid, barrier, barrier_init[spin] == -1);
+				     tid, barrier, barrier_init[barrier] == -1);
+	    }
 	    delete barrier_entry[tid, barrier];
 	}
 	delete details_thread_count;
@@ -1014,6 +1055,29 @@ forget_tid(tid, force) {
 	}
 	delete details_thread_count;
     }
+}
+
+function
+forget_tid(tid, force) {
+    if (exited_tids[tid])
+	delete exited_tids[tid];
+    else if (joined_tids[tid])
+	delete joined_tids[tid];
+    else if (canceled_tids[tid])
+	delete canceled_tids[tid];
+    else if (!force)
+	return 0;
+    delete thread_to_tid[tid_to_thread[tid]];
+    if (verbose)
+	delete thread_name[tid_to_thread[tid]];
+    actually_expected = !!uncertain_tids[tid];
+    forget_tid_mutexes(tid, actually_expected);
+    forget_tid_conds(tid, actually_expected);
+    forget_tid_rdlocks(tid, actually_expected);
+    forget_tid_wrlocks(tid, actually_expected);
+    forget_tid_spins(tid, actually_expected);
+    forget_tid_barriers(tid, actually_expected);
+    delete tid_to_thread[tid];
     return 1;
 }
 
@@ -2261,15 +2325,7 @@ function time_string(usec:long) {
     return result;
 }
 
-function report() {
-    printf("\nReport for %s (%s)\n", process_name, process_arguments);
-    if (verbose) {
-	printf("tid to pthread\n");
-	foreach (tid in tid_to_thread) {
-	    thread = tid_to_thread[tid];
-	    printf("    %ld %p %s\n", tid, thread, thread_name[thread]);
-	}
-    }
+function report_mutex(now) {
     if (verbose) {
 	count = 0;
 	foreach ([tid, mutex] in mutex_contention_per_thread) {
@@ -2329,8 +2385,6 @@ function report() {
 	}
 	delete details;
     }
-
-    now = gettimeofday_us();
     foreach (mutex in mutex_lock) {
 	tid = mutex_lock[mutex];
 	if (tid)
@@ -2355,7 +2409,9 @@ function report() {
 	}
     }
     delete details;
+}
 
+function report_cond(now) {
     if (verbose) {
 	count = 0;
 	foreach ([tid, cond] in cond_wait_per_thread) {
@@ -2412,7 +2468,6 @@ function report() {
 	delete details_signal_count;
 	delete details;
     }
-
     foreach ([tid, cond] in cond_wait) {
 	if (cond_wait[tid, cond]) {
 	    conditions[cond] = 1;
@@ -2434,7 +2489,9 @@ function report() {
     }
     delete details;
     delete conditions;
+}
 
+function report_rdlock(now) {
     if (verbose) {
 	count = 0;
 	foreach ([tid, rdlock] in rdlock_contention_per_thread) {
@@ -2507,7 +2564,9 @@ function report() {
 	}
     }
     delete details;
+}
 
+function report_wrlock(now) {
     if (verbose) {
 	count = 0;
 	foreach ([tid, wrlock] in wrlock_contention_per_thread) {
@@ -2580,8 +2639,10 @@ function report() {
 	}
     }
     delete details;
+}
 
-    if (verbose) {
+function report_spin(now) {
+        if (verbose) {
 	count = 0;
 	foreach ([tid, spin] in spin_contention_per_thread) {
 	    ++details_thread_count[spin];
@@ -2649,7 +2710,9 @@ function report() {
 	}
     }
     delete details;
+}
 
+function report_barrier(now) {
     if (verbose) {
 	count = 0;
 	foreach ([tid, barrier] in barrier_contention_per_thread) {
@@ -2661,7 +2724,7 @@ function report() {
 	}
 	delete details_thread_count;
 	foreach ([barrier, time-] in details) {
-	    if (barrier_contention_count[spin]) {
+	    if (barrier_contention_count[barrier]) {
 		if (count++ >= report_barrier_count)
 		    break;
 		if (barrier_init[barrier])
@@ -2705,6 +2768,24 @@ function report() {
 	}
     }
     delete details;
+}
+
+function report() {
+    printf("\nReport for %s (%s)\n", process_name, process_arguments);
+    if (verbose) {
+	printf("tid to pthread\n");
+	foreach (tid in tid_to_thread) {
+	    thread = tid_to_thread[tid];
+	    printf("    %ld %p %s\n", tid, thread, thread_name[thread]);
+	}
+    }
+    now = gettimeofday_us();
+    report_mutex(now);
+    report_cond(now);
+    report_rdlock(now);
+    report_wrlock(now);
+    report_spin(now);
+    report_barrier(now);
 }
 
 probe signal.send {
