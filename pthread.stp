@@ -395,6 +395,9 @@ global report_wrlock_count = 10;
 /* Number of detailed spinlocks to report; sorted by total wait time. */
 global report_spin_count = 10;
 
+/* Number of detailed barriers to report; sorted by total wait time. */
+global report_barrier_count = 10;
+
 private global tid_to_thread;
 private global thread_to_tid;
 private global thread_name;
@@ -508,6 +511,17 @@ private global spin_total_time;
 private global spin_min_time;
 private global spin_max_time;
 
+private global barrier_init;
+private global barrier_entry;
+private global barrier_count;
+private global barriers;
+
+private global barrier_contention_total_time;
+private global barrier_contention_min_time;
+private global barrier_contention_max_time;
+private global barrier_contention_count;
+private global barrier_contention_per_thread;
+
 private global process_name = "";
 private global process_path = "";
 private global process_arguments, exec_process_arguments;
@@ -524,6 +538,7 @@ global start_gdbserver = 0;
 global gdbserver_port = 1234;
 global binary_path_for_gdbserver = "";
 
+@define	PTHREAD_BARRIER_SERIAL_THREAD %( -1 %)
 @define	EPERM			%(   1 %)
 @define EAGAIN			%(  11 %)
 @define	EBUSY			%(  16 %)
@@ -971,8 +986,31 @@ forget_tid(tid, force) {
 	    if (key == tid)
 		details_thread_count[spin] = 1;
 	}
-	foreach (mutex in details_thread_count) {
+	foreach (spin in details_thread_count) {
 	    delete spin_contention_per_thread[tid, spin];
+	}
+	delete details_thread_count;
+    }
+    if (expensive_checks) {
+	foreach([key, barrier] in barrier_entry) {
+	    if (key == tid)
+		details_thread_count[barrier] = 1;
+	}
+	foreach (barrier in details_thread_count) {
+	    if (!actually_expected)
+		unexpected_condition("barrier_entry",
+				     tid, barrier, barrier_init[spin] == -1);
+	    delete barrier_entry[tid, barrier];
+	}
+	delete details_thread_count;
+    }
+    if (verbose) {
+	foreach([key, barrier] in barrier_contention_per_thread) {
+	    if (key == tid)
+		details_thread_count[barrier] = 1;
+	}
+	foreach (barrier in details_thread_count) {
+	    delete barrier_contention_per_thread[tid, barrier];
 	}
 	delete details_thread_count;
     }
@@ -1981,6 +2019,123 @@ forget_spinlock(spin) {
     }
 }
 
+probe
+process("/lib64/libc.so.6").function("__pthread_spin_destroy").return !,
+process("/lib64/libc.so.6").function("pthread_spin_destroy").return {
+    if (pid() != target())
+	next;
+    result = @RETURN;
+    if (result == 0) {
+	spin	= @ENTRY_ARG1;
+	spin_init[spin] = -1;
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
+process("/lib64/libc.so.6").function("__pthread_barrier_init").return !,
+process("/lib64/libc.so.6").function("pthread_barrier_init").return {
+    if (pid() != target())
+	next;
+    result = @RETURN;
+    if (result == 0) {
+	barrier	= @ENTRY_ARG1;
+	//attr	= @ENTRY_ARG2;
+	count	= @ENTRY_ARG3;
+	check_memory_reuse(barrier, "barrier");
+	barrier_init[barrier] = tid();
+	barrier_count[barrier] = count;
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
+process("/lib64/libc.so.6").function("__pthread_barrier_wait") !,
+process("/lib64/libc.so.6").function("pthread_barrier_wait") {
+    if (pid() != target())
+	next;
+    barrier	= @ARG1;
+    barrier_entry[tid(), barrier] = gettimeofday_us();
+}
+
+probe
+process("/lib64/libc.so.6").function("__pthread_barrier_wait").return !,
+process("/lib64/libc.so.6").function("pthread_barrier_wait").return {
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    barrier	= @ARG1;
+    if (result == 0 || result == @PTHREAD_BARRIER_SERIAL_THREAD) {
+	barriers[barrier] = tid();
+	now = gettimeofday_us();
+	if (verbose) {
+	    ++barrier_count[barrier];
+	    diff = now - barrier_entry[tid(), barrier];
+	    barrier_contention_total_time[barrier] += diff;
+	    if (!barrier_contention_min_time[barrier] ||
+		barrier_contention_min_time[barrier] > diff)
+		barrier_contention_min_time[barrier] = diff;
+	    if (barrier_contention_max_time[barrier] < diff)
+		barrier_contention_max_time[barrier] = diff;
+	    ++barrier_contention_count[barrier];
+	    ++barrier_contention_per_thread[tid(),  barrier];
+	}
+	barrier_entry[tid(), barrier] = now;
+    }
+    else {
+	report_error(ppfunc(), result);
+	delete barrier_entry[tid(), barrier];
+    }
+}
+
+function
+forget_barrier(barrier) {
+    delete barriers[barrier];
+    if (expensive_checks) {
+	destroyed = barrier_init[barrier] == -1;
+	foreach ([tid, key] in barrier_entry) {
+	    if (key == barrier)
+		details_thread_count[tid] = 1;
+	}
+	foreach (tid in details_thread_count) {
+	    unexpected_condition("barrier_entry", tid, barrier, destroyed);
+	    delete barrier_entry[tid, barrier];
+	}
+	delete details_thread_count;
+    }
+    delete barrier_count[barrier];
+    if (verbose) {
+	delete barrier_contention_total_time[barrier];
+	delete barrier_contention_min_time[barrier];
+	delete barrier_contention_max_time[barrier];
+	delete barrier_contention_count[barrier];
+	foreach ([tid, key] in barrier_contention_per_thread) {
+	    if (key ==  barrier)
+		details_thread_count[tid] = 1;
+	}
+	foreach (tid in details_thread_count) {
+	    delete barrier_contention_per_thread[tid, barrier];
+	}
+	delete details_thread_count;
+    }
+}
+
+probe
+process("/lib64/libc.so.6").function("__pthread_barrier_destroy").return !,
+process("/lib64/libc.so.6").function("pthread_barrier_destroy").return {
+    if (pid() != target())
+	next;
+    result = @RETURN;
+    if (result == 0) {
+	barrier	= @ENTRY_ARG1;
+	barrier_init[barrier] = -1;
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
 function
 check_memory_reuse(pointer, type) {
     if (thread_to_tid[pointer]) {
@@ -2035,20 +2190,15 @@ check_memory_reuse(pointer, type) {
 	}
 	forget_spinlock(pointer);
     }
-}
-
-probe
-process("/lib64/libc.so.6").function("__pthread_spin_destroy").return !,
-process("/lib64/libc.so.6").function("pthread_spin_destroy").return {
-    if (pid() != target())
-	next;
-    result = @RETURN;
-    if (result == 0) {
-	spin	= @ENTRY_ARG1;
-	spin_init[spin] = -1;
+    else if (barrier_init[pointer]) {
+	if (expensive_checks && barrier_init[pointer] != -1) {
+	    printf("barrier %p reused", pointer);
+	    if (type != "barrier")
+		printf(" as a %s", type);
+	    printf("\n");
+	}
+	forget_barrier(pointer);
     }
-    else
-	report_error(ppfunc(), result);
 }
 
 function plural(count) {
@@ -2445,7 +2595,7 @@ function report() {
 	    if (spin_contention_count[spin]) {
 		if (count++ >= report_spin_count)
 		    break;
-		if (rwlock_init[spin])
+		if (spin_init[spin])
 		    printf("%s ",
 			   spin_init[spin] > 0 ?
 			   "initialized" : "*destroyed");
@@ -2496,6 +2646,62 @@ function report() {
 	    if (key == spin && tid != locker && spin_entry[tid, key])
 		printf("    tid %ld waiting for %s\n", tid,
 		       time_string(now - spin_entry[tid, key]));
+	}
+    }
+    delete details;
+
+    if (verbose) {
+	count = 0;
+	foreach ([tid, barrier] in barrier_contention_per_thread) {
+	    ++details_thread_count[barrier];
+	}
+	foreach (barrier in barrier_contention_total_time) {
+	    details[barrier, barrier_contention_total_time[barrier]] =
+		details_thread_count[barrier];
+	}
+	delete details_thread_count;
+	foreach ([barrier, time-] in details) {
+	    if (barrier_contention_count[spin]) {
+		if (count++ >= report_barrier_count)
+		    break;
+		if (barrier_init[barrier])
+		    printf("%s ",
+			   barrier_init[barrier] > 0 ?
+			   "initialized" : "*destroyed");
+		printf("barrier %p blocked %ld time%s by %ld thread%s\n",
+		       barrier,
+		       barrier_contention_count[barrier],
+		       plural(barrier_contention_count[barrier]),
+		       details[barrier, time],
+		       plural(details[barrier, time]));
+		printf("    total contention	: %s\n", time_string(time));
+		printf("    min contention	: %s\n",
+		       time_string(barrier_contention_min_time[barrier]));
+		printf("    max contention	: %s\n",
+		       time_string(barrier_contention_max_time[barrier]));
+		printf("    average contention	: %s\n",
+		       time_string(barrier_contention_total_time[barrier] /
+				   barrier_contention_count[barrier]));
+	    }
+	}
+	delete details;
+    }
+    foreach (barrier in barriers) {
+	tid = barriers[barrier];
+	if (tid)
+	    details[barrier, now - barrier_entry[tid, barrier]] = tid;
+    }
+    foreach ([barrier, time-] in details) {
+	destroyed = barrier_init[barrier] == -1;
+	printf("%s ", destroyed ?  "*destroyed" : "initialized");
+	printf("barrier %p", barrier);
+	if (!destroyed)
+	    printf(" by %ld\n", barrier_init[barrier]);
+	printf("\n");
+	foreach ([tid, key] in barrier_entry) {
+	    if (key == barrier && barrier_entry[tid, key])
+		printf("    tid %ld waiting for %s\n", tid,
+		       time_string(now - barrier_entry[tid, key]));
 	}
     }
     delete details;
@@ -2603,6 +2809,12 @@ function reset() {
 	delete spin_total_time;
 	delete spin_min_time;
 	delete spin_max_time;
+	delete barrier_count;
+	delete barrier_contention_total_time;
+	delete barrier_contention_min_time;
+	delete barrier_contention_max_time;
+	delete barrier_contention_count;
+	delete barrier_contention_per_thread;
     }
     delete mutex_lock;
     delete mutex_lock_entry;
@@ -2624,6 +2836,10 @@ function reset() {
     delete spin_init;
     delete spin_entry;
     delete spinlocks;
+    delete barrier_init;
+    delete barrier_entry;
+    delete barrier_count;
+    delete barriers;
 }
 
 probe end {
