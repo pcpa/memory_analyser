@@ -1845,10 +1845,21 @@ process(@PTHREAD_PATH).function(@_pthread_rwlock_unlock).return {
 	next;
     result = @RETURN;
     rwlock = @ENTRY_ARG1;
-    rd = rdlocks[rwlock];
     if (result)
 	report_error(ppfunc(), result);
     else {
+	rd = rdlocks[rwlock] == tid();
+	/* Some applications appear to call pthread_rwlock_unlock without
+	 * having the lock, and/or call twice. */
+	if (!rd && wrlocks[rwlock] != tid()) {
+	    printf("Unexpected call to pthread_rwlock_unlock. Called twice?\n");
+	    print_ubacktrace();
+	    %(guru_mode != 0 %?
+	      raise(%{ SIGTRAP %}) %:
+	      printf("generating SIGTRAP needs guru mode\n")
+	      %);
+	    next;
+	}
 	if (verbose) {
 	    now = gettimeofday_us();
 	    if (rd) {
