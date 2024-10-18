@@ -734,6 +734,18 @@ function unexpected_condition(variable:string, tid:long, pointer:long,
 	  %);
 }
 
+function possibly_double_unlock(func:string, type:string,
+				tid:long, pointer:long) {
+    printf("Unexpected call to %s, with tid %ld and %s %p. Called twice?",
+	   func, tid, type, pointer);
+    print_ubacktrace();
+    if (trap_on_unexpected)
+	%(guru_mode != 0 %?
+	  raise(%{ SIGTRAP %}) %:
+	  printf("generating SIGTRAP needs guru mode\n")
+	  %);
+}
+
 probe
 process(@PTHREAD_PATH).function(@_pthread_create).return {
     if (pid() != target())
@@ -1361,6 +1373,11 @@ process(@PTHREAD_PATH).function(@_pthread_mutex_unlock).return {
 	    delete mutex_lock_entry_timer[tid(), mutex];
 	    delete mutex_lock_count[mutex];
 	}
+	else if (mutex_lock_count[mutex] < 0) {
+	    possibly_double_unlock("pthread_mutex_unlock", "mutex",
+				   tid(), mutex);
+	    next;
+	}
     }
 }
 
@@ -1849,15 +1866,9 @@ process(@PTHREAD_PATH).function(@_pthread_rwlock_unlock).return {
 	report_error(ppfunc(), result);
     else {
 	rd = rdlocks[rwlock] == tid();
-	/* Some applications appear to call pthread_rwlock_unlock without
-	 * having the lock, and/or call twice. */
 	if (!rd && wrlocks[rwlock] != tid()) {
-	    printf("Unexpected call to pthread_rwlock_unlock. Called twice?\n");
-	    print_ubacktrace();
-	    %(guru_mode != 0 %?
-	      raise(%{ SIGTRAP %}) %:
-	      printf("generating SIGTRAP needs guru mode\n")
-	      %);
+	    possibly_double_unlock("pthread_rwlock_unlock", "rwlock",
+				   tid(), rwlock);
 	    next;
 	}
 	if (verbose) {
@@ -2079,6 +2090,11 @@ process(@PTHREAD_PATH).function(@_pthread_spin_unlock).return {
     if (result)
 	report_error(ppfunc(), result);
     else {
+	if (!spin_entry[tid(), spin] || spinlocks[spin] != tid()) {
+	    possibly_double_unlock("pthread_spin_unlock", "spin",
+				   tid(), spin);
+	    next;
+	}
 	if (verbose) {
 	    --spin_count[spin];
 	    now = gettimeofday_us();
