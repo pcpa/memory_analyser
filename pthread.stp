@@ -541,6 +541,30 @@ global binary_path_for_gdbserver = "";
 // For RHEL8 use 2.28
 @define GLIBC			%( "2.39" %)
 %( @GLIBC < "2.39" %?
+  @define _pthread_attr_init	%( "__pthread_attr_init_2_1" %) %:
+  @define _pthread_attr_init	%( "__pthread_attr_init" %) %)
+@define	_pthread_attr_getaffinity	%( "__pthread_attr_getaffinity_new" %)
+@define	_pthread_attr_getdetachstate	%( "__pthread_attr_getdetachstate" %)
+@define	_pthread_attr_getguardsize	%( "pthread_attr_getguardsize" %)
+@define	_pthread_attr_getinheritsched	%( "__pthread_attr_getinheritsched" %)
+@define	_pthread_attr_getschedparam	%( "__pthread_attr_getschedparam" %)
+@define	_pthread_attr_getschedpolicy	%( "__pthread_attr_getschedpolicy" %)
+@define	_pthread_attr_getscope	%( "__pthread_attr_getstackaddr" %)	/* deprecated */
+@define	_pthread_attr_getstack	%( "__pthread_attr_getstack" %)
+@define	_pthread_attr_getstackaddr	%( "__pthread_attr_getstackaddr" %)
+@define	_pthread_attr_getstacksize	%( "__pthread_attr_getstacksize" %)
+@define	_pthread_attr_setaffinity	%( "__pthread_attr_setaffinity_np" %)
+@define	_pthread_attr_setdetachstate	%( "__pthread_attr_setdetachstate" %)
+@define	_pthread_attr_setguardsize	%( "pthread_attr_setguardsize" %)
+@define	_pthread_attr_setinheritsched	%( "__pthread_attr_setinheritsched" %)
+@define	_pthread_attr_setschedparam	%( "__pthread_attr_setschedparam" %)
+@define	_pthread_attr_setschedpolicy	%( "__pthread_attr_setschedpolicy" %)
+@define	_pthread_attr_setscope	%( "__pthread_attr_setstackaddr" %)	/* deprecated */
+@define	_pthread_attr_setstack	%( "__pthread_attr_setstack" %)
+@define	_pthread_attr_setstackaddr	%( "__pthread_attr_setstackaddr" %)
+@define	_pthread_attr_setstacksize	%( "__pthread_attr_setstacksize" %)
+@define	_pthread_attr_destroy	%( "__pthread_attr_destroy" %)
+%( @GLIBC < "2.39" %?
   @define PTHREAD_PATH		%( "/lib64/libpthread.so.0" %) %:
   @define PTHREAD_PATH		%( "/lib64/libc.so.6" %) %)
 @define	_pthread_create		%( "__pthread_create_2_1" %)
@@ -744,6 +768,38 @@ function possibly_double_unlock(func:string, type:string,
 	  raise(%{ SIGTRAP %}) %:
 	  printf("generating SIGTRAP needs guru mode\n")
 	  %);
+}
+
+probe
+process(@PTHREAD_PATH).function(@_pthread_attr_init).return,
+process(@PTHREAD_PATH).function(@_pthread_attr_getaffinity).return,
+process(@PTHREAD_PATH).function(@_pthread_attr_getdetachstate).return,
+process(@PTHREAD_PATH).function(@_pthread_attr_getguardsize).return,
+process(@PTHREAD_PATH).function(@_pthread_attr_getinheritsched).return,
+process(@PTHREAD_PATH).function(@_pthread_attr_getschedparam).return,
+process(@PTHREAD_PATH).function(@_pthread_attr_getschedpolicy).return,
+process(@PTHREAD_PATH).function(@_pthread_attr_getscope).return,
+process(@PTHREAD_PATH).function(@_pthread_attr_getstackaddr).return,
+process(@PTHREAD_PATH).function(@_pthread_attr_getstack).return,
+process(@PTHREAD_PATH).function(@_pthread_attr_getstacksize).return,
+process(@PTHREAD_PATH).function(@_pthread_attr_setaffinity).return,
+process(@PTHREAD_PATH).function(@_pthread_attr_setdetachstate).return,
+process(@PTHREAD_PATH).function(@_pthread_attr_setguardsize).return,
+process(@PTHREAD_PATH).function(@_pthread_attr_setinheritsched).return,
+process(@PTHREAD_PATH).function(@_pthread_attr_setschedparam).return,
+process(@PTHREAD_PATH).function(@_pthread_attr_setschedpolicy).return,
+process(@PTHREAD_PATH).function(@_pthread_attr_setscope).return,
+process(@PTHREAD_PATH).function(@_pthread_attr_setstackaddr).return,
+process(@PTHREAD_PATH).function(@_pthread_attr_setstack).return,
+process(@PTHREAD_PATH).function(@_pthread_attr_setstacksize).return,
+process(@PTHREAD_PATH).function(@_pthread_attr_destroy).return {
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    if (result == 0) {
+    }
+    else
+	report_error(ppfunc(), result);
 }
 
 probe
