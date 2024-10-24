@@ -598,6 +598,12 @@ global binary_path_for_gdbserver = "";
   @define _pthread_mutex_setprioceiling	%( "__pthread_mutex_setprioceiling" %) %)
 @define	_pthread_mutex_unlock	%( "__pthread_mutex_unlock" %)
 @define	_pthread_mutex_destroy	%( "__pthread_mutex_destroy" %)
+@define	_pthread_condattr_init	%( "__pthread_condattr_init" %)
+@define	_pthread_condattr_getclock	%( "pthread_condattr_getclock" %)
+@define	_pthread_condattr_getpshared	%( "pthread_condattr_getpshared" %)
+@define	_pthread_condattr_setclock	%( "pthread_condattr_setclock" %)
+@define	_pthread_condattr_setpshared	%( "pthread_condattr_setpshared" %)
+@define	_pthread_condattr_destroy	%( "__pthread_condattr_destroy" %)
 @define	_pthread_cond_init	%( "__pthread_cond_init" %)
 %( @GLIBC < "2.39" %?
   @define _pthread_cond_broadcast	%( "__pthread_cond_broadcast" %) %:
@@ -1498,6 +1504,22 @@ process(@PTHREAD_PATH).function(@_pthread_mutex_destroy).return {
 	mutex = @ENTRY_ARG1;
 	/* Use -1 to known it was destroyed */
 	mutex_init[mutex] = -1;
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
+process(@PTHREAD_PATH).function(@_pthread_condattr_init).return,
+process(@PTHREAD_PATH).function(@_pthread_condattr_getclock).return,
+process(@PTHREAD_PATH).function(@_pthread_condattr_getpshared).return,
+process(@PTHREAD_PATH).function(@_pthread_condattr_setclock).return,
+process(@PTHREAD_PATH).function(@_pthread_condattr_setpshared).return,
+process(@PTHREAD_PATH).function(@_pthread_condattr_destroy).return {
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    if (result == 0) {
     }
     else
 	report_error(ppfunc(), result);
