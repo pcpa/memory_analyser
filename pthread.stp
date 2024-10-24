@@ -630,6 +630,18 @@ global binary_path_for_gdbserver = "";
   @define _pthread_cond_timedwait	%( "__pthread_cond_timedwait" %) %:
   @define _pthread_cond_timedwait	%( "___pthread_cond_timedwait" %) %)
 @define	_pthread_cond_destroy	%( "__pthread_cond_destroy" %)
+%( @GLIBC < "2.39" %?
+  @define _pthread_rwlockattr_init	%( "pthread_rwlockattr_init" %) %:
+  @define _pthread_rwlockattr_init	%( "__pthread_rwlockattr_init" %) %)
+%( @GLIBC < "2.39" %?
+  @define _pthread_rwlockattr_getpshared	%( "pthread_rwlockattr_getpshared" %) %:
+  @define _pthread_rwlockattr_getpshared	%( "__pthread_rwlockattr_getpshared" %) %)
+%( @GLIBC < "2.39" %?
+  @define _pthread_rwlockattr_setpshared	%( "pthread_rwlockattr_setpshared" %) %:
+  @define _pthread_rwlockattr_setpshared	%( "__pthread_rwlockattr_setpshared" %) %)
+%( @GLIBC < "2.39" %?
+  @define _pthread_rwlockattr_destroy	%( "pthread_rwlockattr_destroy" %) %:
+  @define _pthread_rwlockattr_destroy	%( "__pthread_rwlockattr_destroy" %) %)
 @define	_pthread_rwlock_init	%( "__pthread_rwlock_init" %)
 @define	_pthread_rwlock_rdlock	%( "__pthread_rwlock_rdlock" %)
 @define	_pthread_rwlock_tryrdlock	%( "__pthread_rwlock_tryrdlock" %)
@@ -1774,6 +1786,20 @@ process(@PTHREAD_PATH).function(@_pthread_cond_destroy).return {
 	cond = @ENTRY_ARG1;
 	/* Use -1 to known it was destroyed */
 	cond_init[cond] = -1;
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
+process(@PTHREAD_PATH).function(@_pthread_rwlockattr_init).return,
+process(@PTHREAD_PATH).function(@_pthread_rwlockattr_getpshared).return,
+process(@PTHREAD_PATH).function(@_pthread_rwlockattr_setpshared).return,
+process(@PTHREAD_PATH).function(@_pthread_rwlockattr_destroy).return {
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    if (result == 0) {
     }
     else
 	report_error(ppfunc(), result);
