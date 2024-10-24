@@ -581,6 +581,18 @@ global binary_path_for_gdbserver = "";
   @define _pthread_join		%( "__pthread_join" %) %:
   @define _pthread_join		%( "___pthread_join" %) %)
 @define	_pthread_kill		%( "__pthread_kill" %)
+@define	_pthread_mutexattr_init	%( "__pthread_mutexattr_init" %)
+@define	_pthread_mutexattr_getprioceiling	%( "pthread_mutexattr_getprioceiling" %)
+@define	_pthread_mutexattr_getprotocol	%( "pthread_mutexattr_getprotocol" %)
+@define	_pthread_mutexattr_getpshared	%( "pthread_mutexattr_getpshared" %)
+@define	_pthread_mutexattr_getrobust	%( "pthread_mutexattr_getrobust" %)
+@define	_pthread_mutexattr_gettype	%( "pthread_mutexattr_gettype" %)
+@define	_pthread_mutexattr_setprioceiling	%( "pthread_mutexattr_setprioceiling" %)
+@define	_pthread_mutexattr_setprotocol	%( "pthread_mutexattr_setprotocol" %)
+@define	_pthread_mutexattr_setpshared	%( "pthread_mutexattr_setpshared" %)
+@define	_pthread_mutexattr_setrobust	%( "pthread_mutexattr_setrobust" %)
+@define	_pthread_mutexattr_settype	%( "pthread_mutexattr_settype" %)
+@define	_pthread_mutexattr_destroy	%( "__pthread_mutexattr_destroy" %)
 @define	_pthread_mutex_init	%( "__pthread_mutex_init" %)
 @define	_pthread_mutex_trylock	%( "__pthread_mutex_trylock" %)
 %( @GLIBC < "2.39" %?
@@ -1258,6 +1270,28 @@ kprocess.release {
     delete details_thread_count;
     if (uncertain)
 	uncertain_tids[released_tid] = now;
+}
+
+probe
+process(@PTHREAD_PATH).function(@_pthread_mutexattr_init).return,
+process(@PTHREAD_PATH).function(@_pthread_mutexattr_getprioceiling).return,
+process(@PTHREAD_PATH).function(@_pthread_mutexattr_getprotocol).return,
+process(@PTHREAD_PATH).function(@_pthread_mutexattr_getpshared).return,
+process(@PTHREAD_PATH).function(@_pthread_mutexattr_getrobust).return,
+process(@PTHREAD_PATH).function(@_pthread_mutexattr_gettype).return,
+process(@PTHREAD_PATH).function(@_pthread_mutexattr_setprioceiling).return,
+process(@PTHREAD_PATH).function(@_pthread_mutexattr_setprotocol).return,
+process(@PTHREAD_PATH).function(@_pthread_mutexattr_setpshared).return,
+process(@PTHREAD_PATH).function(@_pthread_mutexattr_setrobust).return,
+process(@PTHREAD_PATH).function(@_pthread_mutexattr_gettype).return,
+process(@PTHREAD_PATH).function(@_pthread_mutexattr_destroy).return {
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    if (result == 0) {
+    }
+    else
+	report_error(ppfunc(), result);
 }
 
 probe
