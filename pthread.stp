@@ -402,6 +402,8 @@ private global tid_to_thread;
 private global thread_to_tid;
 private global thread_name;
 
+private global attr_init;
+
 /* Explicit pthread_exit */
 private global exited_tids;
 /* Explicit pthread_join */
@@ -824,7 +826,21 @@ function possibly_double_destroy(func:string, type:string, pointer:long) {
 }
 
 probe
-process(@PTHREAD_PATH).function(@_pthread_attr_init).return,
+process(@PTHREAD_PATH).function(@_pthread_attr_init).return
+{
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    if (result == 0) {
+	attr	= @ENTRY_ARG1;
+	check_memory_reuse(attr, "attr");
+	attr_init[attr] = gettimeofday_us();
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
 process(@PTHREAD_PATH).function(@_pthread_attr_getaffinity).return,
 process(@PTHREAD_PATH).function(@_pthread_attr_getdetachstate).return,
 process(@PTHREAD_PATH).function(@_pthread_attr_getguardsize).return,
@@ -844,12 +860,39 @@ process(@PTHREAD_PATH).function(@_pthread_attr_setschedpolicy).return,
 process(@PTHREAD_PATH).function(@_pthread_attr_setscope).return,
 process(@PTHREAD_PATH).function(@_pthread_attr_setstackaddr).return,
 process(@PTHREAD_PATH).function(@_pthread_attr_setstack).return,
-process(@PTHREAD_PATH).function(@_pthread_attr_setstacksize).return,
+process(@PTHREAD_PATH).function(@_pthread_attr_setstacksize).return {
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    if (result == 0) {
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+/*
+function
+forget_attr(attr) {
+}
+ */
+
+probe
 process(@PTHREAD_PATH).function(@_pthread_attr_destroy).return {
     if (pid() != target())
 	next;
     result	= @RETURN;
     if (result == 0) {
+	attr  = @ENTRY_ARG1;
+	if (attr_init[attr] == -1) {
+	    backtrace = sprint_ubacktrace();
+	    /* if attr is NULL a default one is used. */
+	    if (backtrace =~ "pthread_create@@GLIBC")
+		next;
+	    possibly_double_destroy("pthread_attr_destroy",
+				    "attr", attr);
+	}
+	else
+	    attr_init[attr] = -1;
     }
     else
 	report_error(ppfunc(), result);
@@ -2594,6 +2637,15 @@ check_memory_reuse(pointer, type) {
 	}
 	forget_tid(thread_to_tid[pointer], 1);
     }
+    if (attr_init[pointer]) {
+	if (expensive_checks && attr_init[pointer] != -1) {
+	    printf("attr %p reused", pointer);
+	    if (type != "attr")
+		printf(" as a %s", type);
+	    printf("\n");
+	}
+	// forget_attr(pointer);
+    }
     if (mutexattr_init[pointer]) {
 	if (expensive_checks && mutexattr_init[pointer] != -1) {
 	    printf("mutexattr %p reused", pointer);
@@ -3248,6 +3300,7 @@ function reset() {
     delete joined_tids;
     delete canceled_tids;
     delete uncertain_tids;
+    delete attr_init;
     if (verbose) {
 	delete thread_name;
 	delete mutex_contention_total_time;
