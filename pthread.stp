@@ -1645,8 +1645,11 @@ process(@PTHREAD_PATH).function(@_pthread_mutex_destroy).return {
     result = @RETURN;
     if (result == 0) {
 	mutex = @ENTRY_ARG1;
-	/* Use -1 to known it was destroyed */
-	mutex_init[mutex] = -1;
+	if (mutex_init[mutex] == -1)
+	    possibly_double_destroy("pthread_mutex_destroy",
+				    "mutex", mutex);
+	else
+	    mutex_init[mutex] = -1;
     }
     else
 	report_error(ppfunc(), result);
@@ -1916,8 +1919,11 @@ process(@PTHREAD_PATH).function(@_pthread_cond_destroy).return {
     result = @RETURN;
     if (result == 0) {
 	cond = @ENTRY_ARG1;
-	/* Use -1 to known it was destroyed */
-	cond_init[cond] = -1;
+	if (cond_init[cond] == -1)
+	    possibly_double_destroy("pthread_cond_destroy",
+				    "cond", cond);
+	else
+	    cond_init[cond] = -1;
     }
     else
 	report_error(ppfunc(), result);
@@ -2303,7 +2309,11 @@ process(@PTHREAD_PATH).function(@_pthread_rwlock_destroy).return {
     result = @RETURN;
     if (result == 0) {
 	rwlock	= @ENTRY_ARG1;
-	rwlock_init[rwlock] = -1;
+	if (rwlock_init[rwlock] == -1)
+	    possibly_double_destroy("pthread_rwlock_destroy",
+				    "rwlock", rwlock);
+	else
+	    rwlock_init[rwlock] = -1;
     }
     else
 	report_error(ppfunc(), result);
@@ -2463,7 +2473,11 @@ process(@PTHREAD_PATH).function(@_pthread_spin_destroy).return {
     result = @RETURN;
     if (result == 0) {
 	spin	= @ENTRY_ARG1;
-	spin_init[spin] = -1;
+	if (spin_init[spin] == -1)
+	    possibly_double_destroy("pthread_spin_destroy",
+				    "spin", spin);
+	else
+	    spin_init[spin] = -1;
     }
     else
 	report_error(ppfunc(), result);
@@ -2613,7 +2627,11 @@ process(@PTHREAD_PATH).function(@_pthread_barrier_destroy).return {
     result = @RETURN;
     if (result == 0) {
 	barrier	= @ENTRY_ARG1;
-	barrier_init[barrier] = -1;
+	if (barrier_init[barrier] == -1)
+	    possibly_double_destroy("pthread_barrier_destroy",
+				    "barrier", barrier);
+	else
+	    barrier_init[barrier] = -1;
     }
     else
 	report_error(ppfunc(), result);
