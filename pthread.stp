@@ -413,6 +413,8 @@ private global canceled_tids;
  * to avoid too many false positives about unexpected states. */
 private global uncertain_tids;
 
+private global mutexattr_init;
+
 private global mutex_lock;
 private global mutex_lock_count;
 private global mutex_lock_entry;
@@ -442,6 +444,8 @@ private global mutex_lock_min_time;
 /* Maximum lock time */
 private global mutex_lock_max_time;
 
+private global condattr_init;
+
 private global conditions;
 private global mutex_wait;
 private global cond_wait;
@@ -464,6 +468,8 @@ private global cond_signal_count;
 private global cond_signal_per_thread;
 private global cond_broadcast_count;
 private global cond_broadcast_per_thread;
+
+private global rwlockattr_init;
 
 private global rwlock_init;
 private global rdlock_entry;
@@ -510,6 +516,8 @@ private global spin_contention_fail_try;
 private global spin_total_time;
 private global spin_min_time;
 private global spin_max_time;
+
+private global barrierattr_init;
 
 private global barrier_init;
 private global barrier_entry;
@@ -796,6 +804,17 @@ function possibly_double_unlock(func:string, type:string,
 				tid:long, pointer:long) {
     printf("Unexpected call to %s, with tid %ld and %s %p. Called twice?",
 	   func, tid, type, pointer);
+    print_ubacktrace();
+    if (trap_on_unexpected)
+	%(guru_mode != 0 %?
+	  raise(%{ SIGTRAP %}) %:
+	  printf("generating SIGTRAP needs guru mode\n")
+	  %);
+}
+
+function possibly_double_destroy(func:string, type:string, pointer:long) {
+    printf("Unexpected call to %s, with %s %p. Called twice?",
+	   func, type, pointer);
     print_ubacktrace();
     if (trap_on_unexpected)
 	%(guru_mode != 0 %?
@@ -1285,7 +1304,20 @@ kprocess.release {
 }
 
 probe
-process(@PTHREAD_PATH).function(@_pthread_mutexattr_init).return,
+process(@PTHREAD_PATH).function(@_pthread_mutexattr_init).return {
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    if (result == 0) {
+	attr	= @ENTRY_ARG1;
+	check_memory_reuse(attr, "mutexattr");
+	mutexattr_init[attr] = gettimeofday_us();
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
 process(@PTHREAD_PATH).function(@_pthread_mutexattr_getprioceiling).return,
 process(@PTHREAD_PATH).function(@_pthread_mutexattr_getprotocol).return,
 process(@PTHREAD_PATH).function(@_pthread_mutexattr_getpshared).return,
@@ -1295,12 +1327,34 @@ process(@PTHREAD_PATH).function(@_pthread_mutexattr_setprioceiling).return,
 process(@PTHREAD_PATH).function(@_pthread_mutexattr_setprotocol).return,
 process(@PTHREAD_PATH).function(@_pthread_mutexattr_setpshared).return,
 process(@PTHREAD_PATH).function(@_pthread_mutexattr_setrobust).return,
-process(@PTHREAD_PATH).function(@_pthread_mutexattr_gettype).return,
+process(@PTHREAD_PATH).function(@_pthread_mutexattr_gettype).return {
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    if (result == 0) {
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+/*
+function
+forget_mutexattr(attr) {
+}
+ */
+
+probe
 process(@PTHREAD_PATH).function(@_pthread_mutexattr_destroy).return {
     if (pid() != target())
 	next;
     result	= @RETURN;
     if (result == 0) {
+	attr  = @ENTRY_ARG1;
+	if (mutexattr_init[attr] == -1)
+	    possibly_double_destroy("pthread_mutexattr_destroy",
+				    "mutexattr", attr);
+	else
+	    mutexattr_init[attr] = -1;
     }
     else
 	report_error(ppfunc(), result);
@@ -1556,16 +1610,51 @@ process(@PTHREAD_PATH).function(@_pthread_mutex_destroy).return {
 }
 
 probe
-process(@PTHREAD_PATH).function(@_pthread_condattr_init).return,
+process(@PTHREAD_PATH).function(@_pthread_condattr_init).return {
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    if (result == 0) {
+	attr	= @ENTRY_ARG1;
+	check_memory_reuse(attr, "condattr");
+	condattr_init[attr] = gettimeofday_us();
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
 process(@PTHREAD_PATH).function(@_pthread_condattr_getclock).return,
 process(@PTHREAD_PATH).function(@_pthread_condattr_getpshared).return,
 process(@PTHREAD_PATH).function(@_pthread_condattr_setclock).return,
-process(@PTHREAD_PATH).function(@_pthread_condattr_setpshared).return,
+process(@PTHREAD_PATH).function(@_pthread_condattr_setpshared).return {
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    if (result == 0) {
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+/*
+function
+forget_condattr(attr) {
+}
+ */
+
+probe
 process(@PTHREAD_PATH).function(@_pthread_condattr_destroy).return {
     if (pid() != target())
 	next;
     result	= @RETURN;
     if (result == 0) {
+	attr	= @ENTRY_ARG1;
+	if (mutexattr_init[attr] == -1)
+	    possibly_double_destroy("pthread_condattr_destroy",
+				    "condattr", attr);
+	else
+	    condattr_init[attr] = -1;
     }
     else
 	report_error(ppfunc(), result);
@@ -1792,14 +1881,50 @@ process(@PTHREAD_PATH).function(@_pthread_cond_destroy).return {
 }
 
 probe
-process(@PTHREAD_PATH).function(@_pthread_rwlockattr_init).return,
+process(@PTHREAD_PATH).function(@_pthread_rwlockattr_init).return
+{
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    if (result == 0) {
+	attr	= @ENTRY_ARG1;
+	check_memory_reuse(attr, "rwlockattr");
+	rwlockattr_init[attr] = gettimeofday_us();
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
 process(@PTHREAD_PATH).function(@_pthread_rwlockattr_getpshared).return,
-process(@PTHREAD_PATH).function(@_pthread_rwlockattr_setpshared).return,
+process(@PTHREAD_PATH).function(@_pthread_rwlockattr_setpshared).return {
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    if (result == 0) {
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+/*
+function
+forget_rwlockattr(attr) {
+}
+ */
+
+probe
 process(@PTHREAD_PATH).function(@_pthread_rwlockattr_destroy).return {
     if (pid() != target())
 	next;
     result	= @RETURN;
     if (result == 0) {
+	attr  = @ENTRY_ARG1;
+	if (rwlockattr_init[attr] == -1)
+	    possibly_double_destroy("pthread_rwlockattr_destroy",
+				    "rwlockattr", attr);
+	else
+	    rwlockattr_init[attr] = -1;
     }
     else
 	report_error(ppfunc(), result);
@@ -2302,14 +2427,51 @@ process(@PTHREAD_PATH).function(@_pthread_spin_destroy).return {
 }
 
 probe
-process(@PTHREAD_PATH).function(@_pthread_barrierattr_init).return,
+process(@PTHREAD_PATH).function(@_pthread_barrierattr_init).return
+{
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    if (result == 0) {
+	attr	= @ENTRY_ARG1;
+	check_memory_reuse(attr, "barrierattr");
+	barrierattr_init[attr] = gettimeofday_us();
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
 process(@PTHREAD_PATH).function(@_pthread_barrierattr_getpshared).return,
-process(@PTHREAD_PATH).function(@_pthread_barrierattr_setpshared).return,
+process(@PTHREAD_PATH).function(@_pthread_barrierattr_setpshared).return
+{
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    if (result == 0) {
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+/*
+function
+forget_barrierattr(attr) {
+}
+ */
+
+probe
 process(@PTHREAD_PATH).function(@_pthread_barrierattr_destroy).return {
     if (pid() != target())
 	next;
     result	= @RETURN;
     if (result == 0) {
+	attr  = @ENTRY_ARG1;
+	if (barrierattr_init[attr] == -1)
+	    possibly_double_destroy("pthread_barrierattr_destroy",
+				    "barrierattr", attr);
+	else
+	    barrierattr_init[attr] = -1;
     }
     else
 	report_error(ppfunc(), result);
@@ -2432,7 +2594,16 @@ check_memory_reuse(pointer, type) {
 	}
 	forget_tid(thread_to_tid[pointer], 1);
     }
-    if (mutex_init[pointer]) {
+    if (mutexattr_init[pointer]) {
+	if (expensive_checks && mutexattr_init[pointer] != -1) {
+	    printf("mutexattr %p reused", pointer);
+	    if (type != "mutexattr")
+		printf(" as a %s", type);
+	    printf("\n");
+	}
+	// forget_mutexattr(pointer);
+    }
+    else if (mutex_init[pointer]) {
 	if (expensive_checks && mutex_init[pointer] != -1) {
 	    printf("mutex %p reused", pointer);
 	    if (type != "mutex")
@@ -2440,6 +2611,15 @@ check_memory_reuse(pointer, type) {
 	    printf("\n");
 	}
 	forget_mutex(pointer);
+    }
+    else if (condattr_init[pointer]) {
+	if (expensive_checks && condattr_init[pointer] != -1) {
+	    printf("condattr %p reused", pointer);
+	    if (type != "condattr")
+		printf(" as a %s", type);
+	    printf("\n");
+	}
+	// forget_condattr(pointer);
     }
     else if (cond_init[pointer]) {
 	if (expensive_checks && cond_init[pointer] != -1) {
@@ -2449,6 +2629,15 @@ check_memory_reuse(pointer, type) {
 	    printf("\n");
 	}
 	forget_condition(pointer);
+    }
+    else if (rwlockattr_init[pointer]) {
+	if (expensive_checks && rwlockattr_init[pointer] != -1) {
+	    printf("rwlockattr %p reused", pointer);
+	    if (type != "rwlockattr")
+		printf(" as a %s", type);
+	    printf("\n");
+	}
+	// forget_rwlockattr(pointer);
     }
     else if (rwlock_init[pointer]) {
 	if (expensive_checks && rwlock_init[pointer] != -1) {
@@ -2467,6 +2656,15 @@ check_memory_reuse(pointer, type) {
 	    printf("\n");
 	}
 	forget_spinlock(pointer);
+    }
+    else if (barrierattr_init[pointer]) {
+	if (expensive_checks && barrierattr_init[pointer] != -1) {
+	    printf("barrierattr %p reused", pointer);
+	    if (type != "barrierattr")
+		printf(" as a %s", type);
+	    printf("\n");
+	}
+	// forget_barrierattr(pointer);
     }
     else if (barrier_init[pointer]) {
 	if (expensive_checks && barrier_init[pointer] != -1) {
@@ -3111,16 +3309,19 @@ function reset() {
 	delete barrier_contention_count;
 	delete barrier_contention_per_thread;
     }
+    delete mutexattr_init;
     delete mutex_lock;
     delete mutex_lock_entry;
     delete mutex_lock_entry_timer;
     delete mutex_consistent;
     delete mutex_prioceiling;
     delete mutex_init;
+    delete condattr_init;
     delete mutex_wait;
     delete cond_wait;
     delete cond_wait_timer;
     delete cond_init;
+    delete rwlockattr_init;
     delete rwlock_init;
     delete rdlocks;
     delete rdlock_entry;
@@ -3131,6 +3332,7 @@ function reset() {
     delete spin_init;
     delete spin_entry;
     delete spinlocks;
+    delete barrierattr_init;
     delete barrier_init;
     delete barrier_entry;
     delete barrier_count;
