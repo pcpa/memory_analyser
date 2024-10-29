@@ -549,13 +549,19 @@ global gdbserver_port = 1234;
 global binary_path_for_gdbserver = "";
 
 // For RHEL8 use 2.28
+// For RHEL9 use 2.34
 @define GLIBC			%( "2.39" %)
-%( @GLIBC < "2.39" %?
+%( @GLIBC < "2.34" %?
+  @define PTHREAD_PATH		%( "/lib64/libpthread.so.0" %) %:
+  @define PTHREAD_PATH		%( "/lib64/libc.so.6" %) %)
+%( @GLIBC < "2.34" %?
   @define _pthread_attr_init	%( "__pthread_attr_init_2_1" %) %:
   @define _pthread_attr_init	%( "__pthread_attr_init" %) %)
 @define	_pthread_attr_getaffinity	%( "__pthread_attr_getaffinity_new" %)
 @define	_pthread_attr_getdetachstate	%( "__pthread_attr_getdetachstate" %)
-@define	_pthread_attr_getguardsize	%( "pthread_attr_getguardsize" %)
+%( @GLIBC == "2.34" %?
+@define	_pthread_attr_getguardsize	%( "__pthread_attr_getguardsize" %) %:
+@define	_pthread_attr_getguardsize	%( "pthread_attr_getguardsize" %) %)
 @define	_pthread_attr_getinheritsched	%( "__pthread_attr_getinheritsched" %)
 @define	_pthread_attr_getschedparam	%( "__pthread_attr_getschedparam" %)
 @define	_pthread_attr_getschedpolicy	%( "__pthread_attr_getschedpolicy" %)
@@ -565,7 +571,9 @@ global binary_path_for_gdbserver = "";
 @define	_pthread_attr_getstacksize	%( "__pthread_attr_getstacksize" %)
 @define	_pthread_attr_setaffinity	%( "__pthread_attr_setaffinity_np" %)
 @define	_pthread_attr_setdetachstate	%( "__pthread_attr_setdetachstate" %)
-@define	_pthread_attr_setguardsize	%( "pthread_attr_setguardsize" %)
+%( @GLIBC == "2.34" %?
+@define	_pthread_attr_setguardsize	%( "__pthread_attr_setguardsize" %) %:
+@define	_pthread_attr_setguardsize	%( "pthread_attr_setguardsize" %) %)
 @define	_pthread_attr_setinheritsched	%( "__pthread_attr_setinheritsched" %)
 @define	_pthread_attr_setschedparam	%( "__pthread_attr_setschedparam" %)
 @define	_pthread_attr_setschedpolicy	%( "__pthread_attr_setschedpolicy" %)
@@ -574,121 +582,180 @@ global binary_path_for_gdbserver = "";
 @define	_pthread_attr_setstackaddr	%( "__pthread_attr_setstackaddr" %)
 @define	_pthread_attr_setstacksize	%( "__pthread_attr_setstacksize" %)
 @define	_pthread_attr_destroy	%( "__pthread_attr_destroy" %)
-%( @GLIBC < "2.39" %?
-  @define PTHREAD_PATH		%( "/lib64/libpthread.so.0" %) %:
-  @define PTHREAD_PATH		%( "/lib64/libc.so.6" %) %)
 @define	_pthread_create		%( "__pthread_create_2_1" %)
-%( @GLIBC < "2.39" %?
+%( @GLIBC < "2.34" %?
   @define _pthread_setname_np	%( "pthread_setname_np" %) %:
   @define _pthread_setname_np	%( "__pthread_setname_np" %) %)
 @define	_pthread_cancel		%( "__pthread_cancel" %)
 @define	_pthread_testcancel	%( "__pthread_testcancel" %)
-%( @GLIBC < "2.39" %?
+%( @GLIBC < "2.34" %?
   @define _pthread_detach	%( "__pthread_detach" %) %:
   @define _pthread_detach	%( "___pthread_detach" %) %)
 @define	_pthread_exit		%( "__pthread_exit" %)
-%( @GLIBC < "2.39" %?
+%( @GLIBC < "2.34" %?
   @define _pthread_join		%( "__pthread_join" %) %:
   @define _pthread_join		%( "___pthread_join" %) %)
 @define	_pthread_kill		%( "__pthread_kill" %)
-@define	_pthread_mutexattr_init	%( "__pthread_mutexattr_init" %)
-@define	_pthread_mutexattr_getprioceiling	%( "pthread_mutexattr_getprioceiling" %)
-@define	_pthread_mutexattr_getprotocol	%( "pthread_mutexattr_getprotocol" %)
-@define	_pthread_mutexattr_getpshared	%( "pthread_mutexattr_getpshared" %)
-@define	_pthread_mutexattr_getrobust	%( "pthread_mutexattr_getrobust" %)
-@define	_pthread_mutexattr_gettype	%( "pthread_mutexattr_gettype" %)
-@define	_pthread_mutexattr_setprioceiling	%( "pthread_mutexattr_setprioceiling" %)
-@define	_pthread_mutexattr_setprotocol	%( "pthread_mutexattr_setprotocol" %)
-@define	_pthread_mutexattr_setpshared	%( "pthread_mutexattr_setpshared" %)
-@define	_pthread_mutexattr_setrobust	%( "pthread_mutexattr_setrobust" %)
+%( @GLIBC == "2.34" %?
+@define	_pthread_mutexattr_init	%( "___pthread_mutexattr_init" %) %:
+@define	_pthread_mutexattr_init	%( "__pthread_mutexattr_init" %) %)
+%( @GLIBC == "2.34" %?
+@define	_pthread_mutexattr_getprioceiling	%( "__pthread_mutexattr_getprioceiling" %) %:
+@define	_pthread_mutexattr_getprioceiling	%( "pthread_mutexattr_getprioceiling" %) %)
+%( @GLIBC == "2.34" %?
+@define	_pthread_mutexattr_getprotocol	%( "__pthread_mutexattr_getprotocol" %) %:
+@define	_pthread_mutexattr_getprotocol	%( "pthread_mutexattr_getprotocol" %) %)
+%( @GLIBC == "2.34" %?
+@define	_pthread_mutexattr_getpshared	%( "__pthread_mutexattr_getpshared" %) %:
+@define	_pthread_mutexattr_getpshared	%( "pthread_mutexattr_getpshared" %) %)
+%( @GLIBC == "2.34" %?
+@define	_pthread_mutexattr_getrobust	%( "__pthread_mutexattr_getrobust" %) %:
+@define	_pthread_mutexattr_getrobust	%( "pthread_mutexattr_getrobust" %) %)
+%( @GLIBC == "2.34" %?
+@define	_pthread_mutexattr_gettype	%( "__pthread_mutexattr_gettype" %) %:
+@define	_pthread_mutexattr_gettype	%( "pthread_mutexattr_gettype" %) %)
+%( @GLIBC == "2.34" %?
+@define	_pthread_mutexattr_setprioceiling	%( "__pthread_mutexattr_setprioceiling" %) %:
+@define	_pthread_mutexattr_setprioceiling	%( "pthread_mutexattr_setprioceiling" %) %)
+%( @GLIBC == "2.34" %?
+@define	_pthread_mutexattr_setprotocol	%( "__pthread_mutexattr_setprotocol" %) %:
+@define	_pthread_mutexattr_setprotocol	%( "pthread_mutexattr_setprotocol" %) %)
+%( @GLIBC == "2.34" %?
+@define	_pthread_mutexattr_setpshared	%( "__pthread_mutexattr_setpshared" %) %:
+@define	_pthread_mutexattr_setpshared	%( "pthread_mutexattr_setpshared" %) %)
+%( @GLIBC == "2.34" %?
+@define	_pthread_mutexattr_setrobust	%( "__pthread_mutexattr_setrobust" %) %:
+@define	_pthread_mutexattr_setrobust	%( "pthread_mutexattr_setrobust" %) %)
 @define	_pthread_mutexattr_settype	%( "pthread_mutexattr_settype" %)
-@define	_pthread_mutexattr_destroy	%( "__pthread_mutexattr_destroy" %)
-@define	_pthread_mutex_init	%( "__pthread_mutex_init" %)
-@define	_pthread_mutex_trylock	%( "__pthread_mutex_trylock" %)
-%( @GLIBC < "2.39" %?
+%( @GLIBC == "2.34" %?
+@define	_pthread_mutexattr_destroy	%( "___pthread_mutexattr_destroy" %) %:
+@define	_pthread_mutexattr_destroy	%( "__pthread_mutexattr_destroy" %) %)
+%( @GLIBC == "2.34" %?
+@define	_pthread_mutex_init	%( "___pthread_mutex_init" %) %:
+@define	_pthread_mutex_init	%( "__pthread_mutex_init" %) %)
+%( @GLIBC == "2.34" %?
+@define	_pthread_mutex_trylock	%( "___pthread_mutex_trylock" %) %:
+@define	_pthread_mutex_trylock	%( "__pthread_mutex_trylock" %) %)
+%( @GLIBC < "2.34" %?
   @define _pthread_mutex_timedlock	%( "__pthread_mutex_timedlock" %) %:
   @define _pthread_mutex_timedlock	%( "___pthread_mutex_timedlock" %) %)
-@define	_pthread_mutex_lock	%( "__pthread_mutex_lock" %)
-%( @GLIBC < "2.39" %?
+%( @GLIBC == "2.34" %?
+@define	_pthread_mutex_lock	%( "___pthread_mutex_lock" %) %:
+@define	_pthread_mutex_lock	%( "__pthread_mutex_lock" %) %)
+%( @GLIBC < "2.34" %?
   @define _pthread_mutex_consistent	%( "pthread_mutex_consistent" %) %:
   @define _pthread_mutex_consistent	%( "__pthread_mutex_consistent" %) %)
-%( @GLIBC < "2.39" %?
+%( @GLIBC < "2.34" %?
   @define _pthread_mutex_getprioceiling	%( "pthread_mutex_getprioceiling" %) %:
   @define _pthread_mutex_getprioceiling	%( "__pthread_mutex_getprioceiling" %) %)
-%( @GLIBC < "2.39" %?
+%( @GLIBC < "2.34" %?
   @define _pthread_mutex_setprioceiling	%( "pthread_mutex_setprioceiling" %) %:
   @define _pthread_mutex_setprioceiling	%( "__pthread_mutex_setprioceiling" %) %)
-@define	_pthread_mutex_unlock	%( "__pthread_mutex_unlock" %)
-@define	_pthread_mutex_destroy	%( "__pthread_mutex_destroy" %)
+%( @GLIBC == "2.34" %?
+@define	_pthread_mutex_unlock	%( "___pthread_mutex_unlock" %) %:
+@define	_pthread_mutex_unlock	%( "__pthread_mutex_unlock" %) %)
+%( @GLIBC == "2.34" %?
+@define	_pthread_mutex_destroy	%( "___pthread_mutex_destroy" %) %:
+@define	_pthread_mutex_destroy	%( "__pthread_mutex_destroy" %) %)
 @define	_pthread_condattr_init	%( "__pthread_condattr_init" %)
-@define	_pthread_condattr_getclock	%( "pthread_condattr_getclock" %)
-@define	_pthread_condattr_getpshared	%( "pthread_condattr_getpshared" %)
-@define	_pthread_condattr_setclock	%( "pthread_condattr_setclock" %)
-@define	_pthread_condattr_setpshared	%( "pthread_condattr_setpshared" %)
+%( @GLIBC == "2.34" %?
+@define	_pthread_condattr_getclock	%( "__pthread_condattr_getclock" %) %:
+@define	_pthread_condattr_getclock	%( "pthread_condattr_getclock" %) %)
+%( @GLIBC == "2.34" %?
+@define	_pthread_condattr_getpshared	%( "__pthread_condattr_getpshared" %) %:
+@define	_pthread_condattr_getpshared	%( "pthread_condattr_getpshared" %) %)
+%( @GLIBC == "2.34" %?
+@define	_pthread_condattr_setclock	%( "__pthread_condattr_setclock" %) %:
+@define	_pthread_condattr_setclock	%( "pthread_condattr_setclock" %) %)
+%( @GLIBC == "2.34" %?
+@define	_pthread_condattr_setpshared	%( "__pthread_condattr_setpshared" %) %:
+@define	_pthread_condattr_setpshared	%( "pthread_condattr_setpshared" %) %)
 @define	_pthread_condattr_destroy	%( "__pthread_condattr_destroy" %)
 @define	_pthread_cond_init	%( "__pthread_cond_init" %)
-%( @GLIBC < "2.39" %?
+%( @GLIBC < "2.34" %?
   @define _pthread_cond_broadcast	%( "__pthread_cond_broadcast" %) %:
   @define _pthread_cond_broadcast	%( "___pthread_cond_broadcast" %) %)
-%( @GLIBC < "2.39" %?
+%( @GLIBC < "2.34" %?
   @define _pthread_cond_signal	%( "__pthread_cond_signal" %) %:
   @define _pthread_cond_signal	%( "___pthread_cond_signal" %) %)
-%( @GLIBC < "2.39" %?
+%( @GLIBC < "2.34" %?
   @define _pthread_cond_wait	%( "__pthread_cond_wait" %) %:
   @define _pthread_cond_wait	%( "___pthread_cond_wait" %) %)
-%( @GLIBC < "2.39" %?
+%( @GLIBC < "2.34" %?
   @define _pthread_cond_timedwait	%( "__pthread_cond_timedwait" %) %:
   @define _pthread_cond_timedwait	%( "___pthread_cond_timedwait" %) %)
 @define	_pthread_cond_destroy	%( "__pthread_cond_destroy" %)
-%( @GLIBC < "2.39" %?
+%( @GLIBC < "2.34" %?
   @define _pthread_rwlockattr_init	%( "pthread_rwlockattr_init" %) %:
   @define _pthread_rwlockattr_init	%( "__pthread_rwlockattr_init" %) %)
-%( @GLIBC < "2.39" %?
+%( @GLIBC < "2.34" %?
   @define _pthread_rwlockattr_getpshared	%( "pthread_rwlockattr_getpshared" %) %:
   @define _pthread_rwlockattr_getpshared	%( "__pthread_rwlockattr_getpshared" %) %)
-%( @GLIBC < "2.39" %?
+%( @GLIBC < "2.34" %?
   @define _pthread_rwlockattr_setpshared	%( "pthread_rwlockattr_setpshared" %) %:
   @define _pthread_rwlockattr_setpshared	%( "__pthread_rwlockattr_setpshared" %) %)
-%( @GLIBC < "2.39" %?
+%( @GLIBC < "2.34" %?
   @define _pthread_rwlockattr_destroy	%( "pthread_rwlockattr_destroy" %) %:
   @define _pthread_rwlockattr_destroy	%( "__pthread_rwlockattr_destroy" %) %)
-@define	_pthread_rwlock_init	%( "__pthread_rwlock_init" %)
-@define	_pthread_rwlock_rdlock	%( "__pthread_rwlock_rdlock" %)
-@define	_pthread_rwlock_tryrdlock	%( "__pthread_rwlock_tryrdlock" %)
-%( @GLIBC < "2.39" %?
+%( @GLIBC == "2.34" %?
+@define	_pthread_rwlock_init	%( "___pthread_rwlock_init" %) %:
+@define	_pthread_rwlock_init	%( "__pthread_rwlock_init" %) %)
+%( @GLIBC == "2.34" %?
+@define	_pthread_rwlock_rdlock	%( "___pthread_rwlock_rdlock" %) %:
+@define	_pthread_rwlock_rdlock	%( "__pthread_rwlock_rdlock" %) %)
+%( @GLIBC == "2.34" %?
+@define	_pthread_rwlock_tryrdlock	%( "___pthread_rwlock_tryrdlock" %) %:
+@define	_pthread_rwlock_tryrdlock	%( "__pthread_rwlock_tryrdlock" %) %)
+%( @GLIBC < "2.34" %?
   @define _pthread_rwlock_timedrdlock	%( "pthread_rwlock_timedrdlock" %) %:
   @define _pthread_rwlock_timedrdlock	%( "___pthread_rwlock_timedrdlock" %) %)
-@define	_pthread_rwlock_wrlock	%( "__pthread_rwlock_wrlock" %)
-@define	_pthread_rwlock_trywrlock	%( "__pthread_rwlock_trywrlock" %)
-%( @GLIBC < "2.39" %?
+%( @GLIBC == "2.34" %?
+@define	_pthread_rwlock_wrlock	%( "___pthread_rwlock_wrlock" %) %:
+@define	_pthread_rwlock_wrlock	%( "__pthread_rwlock_wrlock" %) %)
+%( @GLIBC == "2.34" %?
+@define	_pthread_rwlock_trywrlock	%( "___pthread_rwlock_trywrlock" %) %:
+@define	_pthread_rwlock_trywrlock	%( "__pthread_rwlock_trywrlock" %) %)
+%( @GLIBC < "2.34" %?
   @define _pthread_rwlock_timedwrlock	%( "pthread_rwlock_timedwrlock" %) %:
   @define _pthread_rwlock_timedwrlock	%( "___pthread_rwlock_timedwrlock" %) %)
-@define	_pthread_rwlock_unlock	%( "__pthread_rwlock_unlock" %)
-@define	_pthread_rwlock_destroy	%( "__pthread_rwlock_destroy" %)
+%( @GLIBC == "2.34" %?
+@define	_pthread_rwlock_unlock	%( "___pthread_rwlock_unlock" %) %:
+@define	_pthread_rwlock_unlock	%( "__pthread_rwlock_unlock" %) %)
+%( @GLIBC == "2.34" %?
+@define	_pthread_rwlock_destroy	%( "___pthread_rwlock_destroy" %) %:
+@define	_pthread_rwlock_destroy	%( "__pthread_rwlock_destroy" %) %)
 @define	_pthread_spin_init	%( "pthread_spin_init" %)
-%( @GLIBC < "2.39" %?
+%( @GLIBC < "2.34" %?
   @define _pthread_spin_lock	%( "pthread_spin_lock" %) %:
   @define _pthread_spin_lock	%( "__pthread_spin_lock" %) %)
-%( @GLIBC < "2.39" %?
+%( @GLIBC < "2.34" %?
   @define _pthread_spin_trylock	%( "pthread_spin_trylock" %) %:
   @define _pthread_spin_trylock	%( "__pthread_spin_trylock" %) %)
-%( @GLIBC < "2.39" %?
+%( @GLIBC < "2.34" %?
   @define _pthread_spin_unlock	%( "pthread_spin_unlock" %) %:
   @define _pthread_spin_unlock	%( "__pthread_spin_unlock" %) %)
-%( @GLIBC < "2.39" %?
+%( @GLIBC < "2.34" %?
   @define _pthread_spin_destroy	%( "pthread_spin_destroy" %) %:
   @define _pthread_spin_destroy	%( "__pthread_spin_destroy" %) %)
-@define	_pthread_barrierattr_init	%( "pthread_barrierattr_init" %)
-@define	_pthread_barrierattr_getpshared	%( "pthread_barrierattr_getpshared" %)
-@define	_pthread_barrierattr_setpshared	%( "pthread_barrierattr_setpshared" %)
-@define	_pthread_barrierattr_destroy	%( "pthread_barrierattr_destroy" %)
-%( @GLIBC < "2.39" %?
+%( @GLIBC == "2.34" %?
+@define	_pthread_barrierattr_init	%( "__pthread_barrierattr_init" %) %:
+@define	_pthread_barrierattr_init	%( "pthread_barrierattr_init" %) %)
+%( @GLIBC == "2.34" %?
+@define	_pthread_barrierattr_getpshared	%( "__pthread_barrierattr_getpshared" %) %:
+@define	_pthread_barrierattr_getpshared	%( "pthread_barrierattr_getpshared" %) %)
+%( @GLIBC == "2.34" %?
+@define	_pthread_barrierattr_setpshared	%( "__pthread_barrierattr_setpshared" %) %:
+@define	_pthread_barrierattr_setpshared	%( "pthread_barrierattr_setpshared" %) %)
+%( @GLIBC == "2.34" %?
+@define	_pthread_barrierattr_destroy	%( "__pthread_barrierattr_destroy" %) %:
+@define	_pthread_barrierattr_destroy	%( "pthread_barrierattr_destroy" %) %)
+%( @GLIBC < "2.34" %?
   @define _pthread_barrier_init	%( "__pthread_barrier_init" %) %:
   @define _pthread_barrier_init	%( "___pthread_barrier_init" %) %)
-%( @GLIBC < "2.39" %?
+%( @GLIBC < "2.34" %?
   @define _pthread_barrier_wait	%( "__pthread_barrier_wait" %) %:
   @define _pthread_barrier_wait	%( "___pthread_barrier_wait" %) %)
-%( @GLIBC < "2.39" %?
+%( @GLIBC < "2.34" %?
   @define _pthread_barrier_destroy	%( "pthread_barrier_destroy" %) %:
   @define _pthread_barrier_destroy	%( "__pthread_barrier_destroy" %) %)
 
@@ -2319,6 +2386,8 @@ process(@PTHREAD_PATH).function(@_pthread_rwlock_destroy).return {
 	report_error(ppfunc(), result);
 }
 
+/* Does not resolve pthread_spin_init probe */
+%(@GLIBC != "2.34" %?
 probe
 process(@PTHREAD_PATH).function(@_pthread_spin_init).return {
     if (pid() != target())
@@ -2335,6 +2404,7 @@ process(@PTHREAD_PATH).function(@_pthread_spin_init).return {
     else
 	report_error(ppfunc(), result);
 }
+%: %)
 
 function
 common_spin_lock(spin, istry, result) {
@@ -2466,6 +2536,8 @@ forget_spinlock(spin) {
     }
 }
 
+/* Does not resolve pthread_spin_init probe, so skip pthread_spin_destroy */
+%(@GLIBC != "2.34" %?
 probe
 process(@PTHREAD_PATH).function(@_pthread_spin_destroy).return {
     if (pid() != target())
@@ -2482,6 +2554,7 @@ process(@PTHREAD_PATH).function(@_pthread_spin_destroy).return {
     else
 	report_error(ppfunc(), result);
 }
+%: %)
 
 probe
 process(@PTHREAD_PATH).function(@_pthread_barrierattr_init).return
