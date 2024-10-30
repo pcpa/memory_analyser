@@ -2,6 +2,19 @@
 
 /* Sample usage:
 
+  I you get an error in the pattern:
+
+  ERROR: Array overflow, check MAXMAPENTRIES
+
+and increasing MAXMAPENTRIES does not help, you can add
+
+	--suppress-handler-errors
+
+to the command line and still get useful reports.
+  This might happen on some binaries, usually due to some valid shortcuts
+with non matching lock/unlock or init/destroy, or doing an init without
+calling the init, but a memcpy, etc. What puts the script out of sync.
+
 $ stap pthread.stp -DDMAXMAPENTRIES=65536 -DMAXACTION=65536 -DSTP_OVERLOAD_THRESHOLD=1073741824LL -Gverbose=1 -c 'java -jar /path/to/sample.jar'
 Stap ready.
 ...
@@ -1498,7 +1511,7 @@ function common_mutex_lock(mutex, istry, tmout, result) {
 	if ((++mutex_lock_count[mutex]) == 1) {
 	    mutex_lock[mutex] = tid();
 	    now = gettimeofday_us();
-	    if (verbose) {
+	    if (verbose && mutex_lock_entry[tid(), mutex]) {
 		diff = now - mutex_lock_entry[tid(), mutex];
 		mutex_contention_total_time[mutex] += diff;
 		if (!mutex_contention_min_time[mutex] ||
@@ -1638,7 +1651,7 @@ process(@PTHREAD_PATH).function(@_pthread_mutex_unlock).return {
     else {
 	if (--mutex_lock_count[mutex] == 0) {
 	    now = gettimeofday_us();
-	    if (verbose) {
+	    if (verbose && mutex_lock_entry[tid(), mutex]) {
 		diff = now - mutex_lock_entry[tid(), mutex];
 		mutex_lock_total_time[mutex] += diff;
 		if (!mutex_lock_min_time[mutex] ||
@@ -1658,6 +1671,9 @@ process(@PTHREAD_PATH).function(@_pthread_mutex_unlock).return {
 	else if (mutex_lock_count[mutex] < 0) {
 	    possibly_double_unlock("pthread_mutex_unlock", "mutex",
 				   tid(), mutex);
+	    /* Avoid bogus reports, due to deleting the entry_time map
+	     * if no error is generated. */
+	    mutex_lock_count[mutex] = 0;
 	    next;
 	}
     }
@@ -1865,7 +1881,7 @@ common_cond_wait_return(cond, mutex, tmout, result) {
 	if (report)
 	    report_error(ppfunc(), result);
     }
-    if (verbose) {
+    if (verbose && cond_wait[tid(), cond]) {
 	now = gettimeofday_us();
 	diff = now - cond_wait[tid(), cond];
 	++cond_wait_count[cond];
@@ -2085,7 +2101,7 @@ function common_rdlock(rdlock, istry, tmout, result) {
     if (result == 0) {
 	rdlocks[rdlock] = tid();
 	now = gettimeofday_us();
-	if (verbose) {
+	if (verbose && rdlock_entry[tid(), rdlock]) {
 	    ++rdlock_count[rdlock];
 	    diff = now - rdlock_entry[tid(), rdlock];
 	    rdlock_contention_total_time[rdlock] += diff;
@@ -2173,7 +2189,7 @@ function common_wrlock(wrlock, istry, tmout, result) {
     if (result == 0) {
 	wrlocks[wrlock] = tid();
 	now = gettimeofday_us();
-	if (verbose) {
+	if (verbose && wrlock_entry[tid(), wrlock]) {
 	    ++wrlock_count[wrlock];
 	    diff = now - wrlock_entry[tid(), wrlock];
 	    wrlock_contention_total_time[wrlock] += diff;
@@ -2274,7 +2290,7 @@ process(@PTHREAD_PATH).function(@_pthread_rwlock_unlock).return {
 	}
 	if (verbose) {
 	    now = gettimeofday_us();
-	    if (rd) {
+	    if (rd && rdlock_entry[tid(), rwlock]) {
 		diff = now - rdlock_entry[tid(), rwlock];
 		rdlock_total_time[rwlock] += diff;
 		if (!rdlock_min_time[rwlock] ||
@@ -2283,7 +2299,7 @@ process(@PTHREAD_PATH).function(@_pthread_rwlock_unlock).return {
 		if (rdlock_max_time[rwlock] < diff)
 		    rdlock_max_time[rwlock] = diff;
 	    }
-	    else {
+	    else if (wrlock_entry[tid(), rwlock]) {
 		diff = now - wrlock_entry[tid(), rwlock];
 		wrlock_total_time[rwlock] += diff;
 		if (!wrlock_min_time[rwlock] ||
@@ -2432,7 +2448,7 @@ common_spin_lock(spin, istry, result) {
     if (result == 0) {
 	spinlocks[spin] = tid();
 	now = gettimeofday_us();
-	if (verbose) {
+	if (verbose && spin_entry[tid(), spin]) {
 	    ++spin_count[spin];
 	    diff = now - spin_entry[tid(), spin];
 	    spin_contention_total_time[spin] += diff;
@@ -2506,7 +2522,7 @@ process(@PTHREAD_PATH).function(@_pthread_spin_unlock).return {
 				   tid(), spin);
 	    next;
 	}
-	if (verbose) {
+	if (verbose && spin_entry[tid(), spin]) {
 	    --spin_count[spin];
 	    now = gettimeofday_us();
 	    diff = now - spin_entry[tid(), spin];
@@ -2668,7 +2684,7 @@ process(@PTHREAD_PATH).function(@_pthread_barrier_wait).return {
     if (result == 0 || result == @PTHREAD_BARRIER_SERIAL_THREAD) {
 	barriers[barrier] = tid();
 	now = gettimeofday_us();
-	if (verbose) {
+	if (verbose && barrier_entry[tid(), barrier]) {
 	    ++barrier_count[barrier];
 	    diff = now - barrier_entry[tid(), barrier];
 	    barrier_contention_total_time[barrier] += diff;
@@ -2917,8 +2933,9 @@ function report_mutex(now) {
 	    ++details_thread_count[mutex];
 	}
 	foreach (mutex in mutex_contention_total_time) {
-	    details[mutex, mutex_contention_total_time[mutex]] =
-		details_thread_count[mutex];
+	    if (mutex_contention_total_time[mutex])
+		details[mutex, mutex_contention_total_time[mutex]] =
+		    details_thread_count[mutex];
 	}
 	delete details_thread_count;
 	foreach ([mutex, time-] in details) {
@@ -2972,7 +2989,7 @@ function report_mutex(now) {
     }
     foreach (mutex in mutex_lock) {
 	tid = mutex_lock[mutex];
-	if (tid)
+	if (tid && mutex_lock_entry[tid, mutex])
 	    details[mutex, now - mutex_lock_entry[tid, mutex]] = tid;
     }
     /* Order by time locked */
@@ -3133,7 +3150,7 @@ function report_rdlock(now) {
     }
     foreach (rdlock in rdlocks) {
 	tid = rdlocks[rdlock];
-	if (tid)
+	if (tid && rdlock_entry[tid, rdlock])
 	    details[rdlock, now - rdlock_entry[tid, rdlock]] = tid;
     }
     foreach ([rdlock, time-] in details) {
@@ -3208,7 +3225,7 @@ function report_wrlock(now) {
     }
     foreach (wrlock in wrlocks) {
 	tid = wrlocks[wrlock];
-	if (tid)
+	if (tid && rdlock_entry[tid, wrlock])
 	    details[wrlock, now - wrlock_entry[tid, wrlock]] = tid;
     }
     foreach ([wrlock, time-] in details) {
@@ -3279,7 +3296,7 @@ function report_spin(now) {
     }
     foreach (spin in spinlocks) {
 	tid = spinlocks[spin];
-	if (tid)
+	if (tid && spin_entry[tid, spin])
 	    details[spin, now - spin_entry[tid, spin]] = tid;
     }
     foreach ([spin, time-] in details) {
@@ -3336,7 +3353,7 @@ function report_barrier(now) {
     }
     foreach (barrier in barriers) {
 	tid = barriers[barrier];
-	if (tid)
+	if (tid && barrier_entry[tid, barrier])
 	    details[barrier, now - barrier_entry[tid, barrier]] = tid;
     }
     foreach ([barrier, time-] in details) {
