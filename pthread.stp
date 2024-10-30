@@ -939,11 +939,10 @@ process(@PTHREAD_PATH).function(@_pthread_attr_setstacksize).return {
 	report_error(ppfunc(), result);
 }
 
-/*
 function
 forget_attr(attr) {
+    delete attr_init[attr];
 }
- */
 
 probe
 process(@PTHREAD_PATH).function(@_pthread_attr_destroy).return {
@@ -1453,11 +1452,10 @@ process(@PTHREAD_PATH).function(@_pthread_mutexattr_gettype).return {
 	report_error(ppfunc(), result);
 }
 
-/*
 function
 forget_mutexattr(attr) {
+    delete mutexattr_init[attr];
 }
- */
 
 probe
 process(@PTHREAD_PATH).function(@_pthread_mutexattr_destroy).return {
@@ -1711,6 +1709,7 @@ forget_mutex(mutex) {
 	delete mutex_lock_min_time[mutex];
 	delete mutex_lock_max_time[mutex];
     }
+    delete mutex_init[mutex];
 }
 
 probe
@@ -1762,11 +1761,10 @@ process(@PTHREAD_PATH).function(@_pthread_condattr_setpshared).return {
 	report_error(ppfunc(), result);
 }
 
-/*
 function
 forget_condattr(attr) {
+    delete condattr_init[attr];
 }
- */
 
 probe
 process(@PTHREAD_PATH).function(@_pthread_condattr_destroy).return {
@@ -1991,6 +1989,7 @@ forget_condition(cond) {
 	}
 	delete details_thread_count;
     }
+    delete cond_init[cond];
 }
 
 probe
@@ -2041,11 +2040,10 @@ process(@PTHREAD_PATH).function(@_pthread_rwlockattr_setpshared).return {
 	report_error(ppfunc(), result);
 }
 
-/*
 function
 forget_rwlockattr(attr) {
+    delete rwlockattr_init[attr];
 }
- */
 
 probe
 process(@PTHREAD_PATH).function(@_pthread_rwlockattr_destroy).return {
@@ -2387,6 +2385,7 @@ forget_rwlock(rwlock)
 	}
 	delete details_thread_count;
     }
+    delete rwlock_init[rwlock];
 }
 
 probe
@@ -2556,6 +2555,7 @@ forget_spinlock(spin) {
 	delete spin_min_time[spin];
 	delete spin_max_time[spin];
     }
+    delete spin_init[spin];
 }
 
 /* Does not resolve pthread_spin_init probe, so skip pthread_spin_destroy */
@@ -2610,11 +2610,10 @@ process(@PTHREAD_PATH).function(@_pthread_barrierattr_setpshared).return
 	report_error(ppfunc(), result);
 }
 
-/*
 function
 forget_barrierattr(attr) {
+    delete barrierattr_init[attr];
 }
- */
 
 probe
 process(@PTHREAD_PATH).function(@_pthread_barrierattr_destroy).return {
@@ -2719,6 +2718,7 @@ forget_barrier(barrier) {
 	}
 	delete details_thread_count;
     }
+    delete barrier_init[barrier];
 }
 
 probe
@@ -2765,7 +2765,7 @@ check_memory_reuse(pointer, type) {
 		printf(" as a %s", type);
 	    printf("\n");
 	}
-	// forget_attr(pointer);
+	forget_attr(pointer);
     }
     if (mutexattr_init[pointer]) {
 	if (expensive_checks && mutexattr_init[pointer] != -1) {
@@ -2774,7 +2774,7 @@ check_memory_reuse(pointer, type) {
 		printf(" as a %s", type);
 	    printf("\n");
 	}
-	// forget_mutexattr(pointer);
+	forget_mutexattr(pointer);
     }
     else if (mutex_init[pointer]) {
 	if (expensive_checks && mutex_init[pointer] != -1) {
@@ -2792,7 +2792,7 @@ check_memory_reuse(pointer, type) {
 		printf(" as a %s", type);
 	    printf("\n");
 	}
-	// forget_condattr(pointer);
+	forget_condattr(pointer);
     }
     else if (cond_init[pointer]) {
 	if (expensive_checks && cond_init[pointer] != -1) {
@@ -2810,7 +2810,7 @@ check_memory_reuse(pointer, type) {
 		printf(" as a %s", type);
 	    printf("\n");
 	}
-	// forget_rwlockattr(pointer);
+	forget_rwlockattr(pointer);
     }
     else if (rwlock_init[pointer]) {
 	if (expensive_checks && rwlock_init[pointer] != -1) {
@@ -2837,7 +2837,7 @@ check_memory_reuse(pointer, type) {
 		printf(" as a %s", type);
 	    printf("\n");
 	}
-	// forget_barrierattr(pointer);
+	forget_barrierattr(pointer);
     }
     else if (barrier_init[pointer]) {
 	if (expensive_checks && barrier_init[pointer] != -1) {
