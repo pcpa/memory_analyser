@@ -899,9 +899,11 @@ process(@PTHREAD_PATH).function(@_pthread_attr_init).return
 	next;
     result	= @RETURN;
     if (result == 0) {
-	attr	= @ENTRY_ARG1;
-	check_memory_reuse(attr, "attr");
-	attr_init[attr] = gettimeofday_us();
+	if (expensive_checks) {
+	    attr	= @ENTRY_ARG1;
+	    check_memory_reuse(attr, "attr");
+	    attr_init[attr] = gettimeofday_us();
+	}
     }
     else
 	report_error(ppfunc(), result);
@@ -949,17 +951,19 @@ process(@PTHREAD_PATH).function(@_pthread_attr_destroy).return {
 	next;
     result	= @RETURN;
     if (result == 0) {
-	attr  = @ENTRY_ARG1;
-	if (attr_init[attr] == -1) {
-	    backtrace = sprint_ubacktrace();
-	    /* if attr is NULL a default one is used. */
-	    if (backtrace =~ "pthread_create@@GLIBC")
-		next;
-	    possibly_double_destroy("pthread_attr_destroy",
-				    "attr", attr);
+	if (expensive_checks) {
+	    attr  = @ENTRY_ARG1;
+	    if (attr_init[attr] == -1) {
+		backtrace = sprint_ubacktrace();
+		/* if attr is NULL a default one is used. */
+		if (backtrace =~ "pthread_create@@GLIBC")
+		    next;
+		possibly_double_destroy("pthread_attr_destroy",
+					"attr", attr);
+	    }
+	    else
+		attr_init[attr] = -1;
 	}
-	else
-	    attr_init[attr] = -1;
     }
     else
 	report_error(ppfunc(), result);
@@ -1419,9 +1423,11 @@ process(@PTHREAD_PATH).function(@_pthread_mutexattr_init).return {
 	next;
     result	= @RETURN;
     if (result == 0) {
-	attr	= @ENTRY_ARG1;
-	check_memory_reuse(attr, "mutexattr");
-	mutexattr_init[attr] = gettimeofday_us();
+	if (expensive_checks) {
+	    attr	= @ENTRY_ARG1;
+	    check_memory_reuse(attr, "mutexattr");
+	    mutexattr_init[attr] = gettimeofday_us();
+	}
     }
     else
 	report_error(ppfunc(), result);
@@ -1459,12 +1465,14 @@ process(@PTHREAD_PATH).function(@_pthread_mutexattr_destroy).return {
 	next;
     result	= @RETURN;
     if (result == 0) {
-	attr  = @ENTRY_ARG1;
-	if (mutexattr_init[attr] == -1)
-	    possibly_double_destroy("pthread_mutexattr_destroy",
-				    "mutexattr", attr);
-	else
-	    mutexattr_init[attr] = -1;
+	if (expensive_checks) {
+	    attr  = @ENTRY_ARG1;
+	    if (mutexattr_init[attr] == -1)
+		possibly_double_destroy("pthread_mutexattr_destroy",
+					"mutexattr", attr);
+	    else
+		mutexattr_init[attr] = -1;
+	}
     }
     else
 	report_error(ppfunc(), result);
@@ -1712,9 +1720,11 @@ process(@PTHREAD_PATH).function(@_pthread_mutex_destroy).return {
     result = @RETURN;
     if (result == 0) {
 	mutex = @ENTRY_ARG1;
-	if (mutex_init[mutex] == -1)
-	    possibly_double_destroy("pthread_mutex_destroy",
-				    "mutex", mutex);
+	if (mutex_init[mutex] == -1) {
+	    if (expensive_checks)
+		possibly_double_destroy("pthread_mutex_destroy",
+					"mutex", mutex);
+	}
 	else
 	    mutex_init[mutex] = -1;
     }
@@ -1728,9 +1738,11 @@ process(@PTHREAD_PATH).function(@_pthread_condattr_init).return {
 	next;
     result	= @RETURN;
     if (result == 0) {
-	attr	= @ENTRY_ARG1;
-	check_memory_reuse(attr, "condattr");
-	condattr_init[attr] = gettimeofday_us();
+	if (expensive_checks) {
+	    attr	= @ENTRY_ARG1;
+	    check_memory_reuse(attr, "condattr");
+	    condattr_init[attr] = gettimeofday_us();
+	}
     }
     else
 	report_error(ppfunc(), result);
@@ -1762,12 +1774,14 @@ process(@PTHREAD_PATH).function(@_pthread_condattr_destroy).return {
 	next;
     result	= @RETURN;
     if (result == 0) {
-	attr	= @ENTRY_ARG1;
-	if (mutexattr_init[attr] == -1)
-	    possibly_double_destroy("pthread_condattr_destroy",
-				    "condattr", attr);
-	else
-	    condattr_init[attr] = -1;
+	if (expensive_checks) {
+	    attr	= @ENTRY_ARG1;
+	    if (mutexattr_init[attr] == -1)
+		possibly_double_destroy("pthread_condattr_destroy",
+					"condattr", attr);
+	    else
+		condattr_init[attr] = -1;
+	}
     }
     else
 	report_error(ppfunc(), result);
@@ -1986,9 +2000,11 @@ process(@PTHREAD_PATH).function(@_pthread_cond_destroy).return {
     result = @RETURN;
     if (result == 0) {
 	cond = @ENTRY_ARG1;
-	if (cond_init[cond] == -1)
-	    possibly_double_destroy("pthread_cond_destroy",
-				    "cond", cond);
+	if (cond_init[cond] == -1) {
+	    if (expensive_checks)
+		possibly_double_destroy("pthread_cond_destroy",
+					"cond", cond);
+	}
 	else
 	    cond_init[cond] = -1;
     }
@@ -2003,9 +2019,11 @@ process(@PTHREAD_PATH).function(@_pthread_rwlockattr_init).return
 	next;
     result	= @RETURN;
     if (result == 0) {
-	attr	= @ENTRY_ARG1;
-	check_memory_reuse(attr, "rwlockattr");
-	rwlockattr_init[attr] = gettimeofday_us();
+	if (expensive_checks) {
+	    attr	= @ENTRY_ARG1;
+	    check_memory_reuse(attr, "rwlockattr");
+	    rwlockattr_init[attr] = gettimeofday_us();
+	}
     }
     else
 	report_error(ppfunc(), result);
@@ -2035,12 +2053,14 @@ process(@PTHREAD_PATH).function(@_pthread_rwlockattr_destroy).return {
 	next;
     result	= @RETURN;
     if (result == 0) {
-	attr  = @ENTRY_ARG1;
-	if (rwlockattr_init[attr] == -1)
-	    possibly_double_destroy("pthread_rwlockattr_destroy",
-				    "rwlockattr", attr);
-	else
-	    rwlockattr_init[attr] = -1;
+	if (expensive_checks) {
+	    attr  = @ENTRY_ARG1;
+	    if (rwlockattr_init[attr] == -1)
+		possibly_double_destroy("pthread_rwlockattr_destroy",
+					"rwlockattr", attr);
+	    else
+		rwlockattr_init[attr] = -1;
+	}
     }
     else
 	report_error(ppfunc(), result);
@@ -2376,9 +2396,11 @@ process(@PTHREAD_PATH).function(@_pthread_rwlock_destroy).return {
     result = @RETURN;
     if (result == 0) {
 	rwlock	= @ENTRY_ARG1;
-	if (rwlock_init[rwlock] == -1)
-	    possibly_double_destroy("pthread_rwlock_destroy",
-				    "rwlock", rwlock);
+	if (rwlock_init[rwlock] == -1) {
+	    if (expensive_checks)
+		possibly_double_destroy("pthread_rwlock_destroy",
+					"rwlock", rwlock);
+	}
 	else
 	    rwlock_init[rwlock] = -1;
     }
@@ -2545,9 +2567,11 @@ process(@PTHREAD_PATH).function(@_pthread_spin_destroy).return {
     result = @RETURN;
     if (result == 0) {
 	spin	= @ENTRY_ARG1;
-	if (spin_init[spin] == -1)
-	    possibly_double_destroy("pthread_spin_destroy",
-				    "spin", spin);
+	if (spin_init[spin] == -1) {
+	    if (expensive_checks)
+		possibly_double_destroy("pthread_spin_destroy",
+					"spin", spin);
+	}
 	else
 	    spin_init[spin] = -1;
     }
@@ -2563,9 +2587,11 @@ process(@PTHREAD_PATH).function(@_pthread_barrierattr_init).return
 	next;
     result	= @RETURN;
     if (result == 0) {
-	attr	= @ENTRY_ARG1;
-	check_memory_reuse(attr, "barrierattr");
-	barrierattr_init[attr] = gettimeofday_us();
+	if (expensive_checks) {
+	    attr	= @ENTRY_ARG1;
+	    check_memory_reuse(attr, "barrierattr");
+	    barrierattr_init[attr] = gettimeofday_us();
+	}
     }
     else
 	report_error(ppfunc(), result);
@@ -2596,12 +2622,14 @@ process(@PTHREAD_PATH).function(@_pthread_barrierattr_destroy).return {
 	next;
     result	= @RETURN;
     if (result == 0) {
-	attr  = @ENTRY_ARG1;
-	if (barrierattr_init[attr] == -1)
-	    possibly_double_destroy("pthread_barrierattr_destroy",
-				    "barrierattr", attr);
-	else
-	    barrierattr_init[attr] = -1;
+	if (expensive_checks) {
+	    attr  = @ENTRY_ARG1;
+	    if (barrierattr_init[attr] == -1)
+		possibly_double_destroy("pthread_barrierattr_destroy",
+					"barrierattr", attr);
+	    else
+		barrierattr_init[attr] = -1;
+	}
     }
     else
 	report_error(ppfunc(), result);
@@ -2700,9 +2728,11 @@ process(@PTHREAD_PATH).function(@_pthread_barrier_destroy).return {
     result = @RETURN;
     if (result == 0) {
 	barrier	= @ENTRY_ARG1;
-	if (barrier_init[barrier] == -1)
-	    possibly_double_destroy("pthread_barrier_destroy",
-				    "barrier", barrier);
+	if (barrier_init[barrier] == -1) {
+	    if (expensive_checks)
+		possibly_double_destroy("pthread_barrier_destroy",
+					"barrier", barrier);
+	}
 	else
 	    barrier_init[barrier] = -1;
     }
@@ -3453,19 +3483,22 @@ function reset() {
 	delete barrier_contention_count;
 	delete barrier_contention_per_thread;
     }
-    delete mutexattr_init;
+    if (expensive_checks)
+	delete mutexattr_init;
     delete mutex_lock;
     delete mutex_lock_entry;
     delete mutex_lock_entry_timer;
     delete mutex_consistent;
     delete mutex_prioceiling;
     delete mutex_init;
-    delete condattr_init;
+    if (expensive_checks)
+	delete condattr_init;
     delete mutex_wait;
     delete cond_wait;
     delete cond_wait_timer;
     delete cond_init;
-    delete rwlockattr_init;
+    if (expensive_checks)
+	delete rwlockattr_init;
     delete rwlock_init;
     delete rdlocks;
     delete rdlock_entry;
@@ -3476,7 +3509,8 @@ function reset() {
     delete spin_init;
     delete spin_entry;
     delete spinlocks;
-    delete barrierattr_init;
+    if (expensive_checks)
+	delete barrierattr_init;
     delete barrier_init;
     delete barrier_entry;
     delete barrier_count;
