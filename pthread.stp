@@ -1409,7 +1409,7 @@ forget_tid(tid, force) {
 
 probe
 kprocess.release {
-    if (pid() != target())
+    if (pid() != target() || !tid_to_thread[released_tid])
 	next;
     /* If reused and new instance is exiting. */
     force = uncertain_tids[released_tid];
@@ -2773,6 +2773,7 @@ check_memory_reuse(pointer, type) {
 	    printf("\n");
 	}
 	forget_tid(thread_to_tid[pointer], 1);
+	delete uncertain_tids[tid];
     }
     if (attr_init[pointer]) {
 	if (expensive_checks && attr_init[pointer] != -1) {
