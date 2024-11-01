@@ -473,12 +473,16 @@ private global mutex_lock_min_time;
 private global mutex_lock_max_time;
 
 private global condattr_init;
+private global condattr_clock;
+private global condattr_shared;
 
 private global conditions;
 private global mutex_wait;
 private global cond_wait;
 private global cond_wait_timer;
 private global cond_init;
+private global cond_clock;
+private global cond_shared;
 
 /* Count of successful cond wait calls */
 private global cond_wait_count;
@@ -803,10 +807,12 @@ global binary_path_for_gdbserver = "";
 @define	PTHREAD_PRIO_NONE	%(   0 %)
 @define	PTHREAD_PRIO_INHERIT	%(   1 %)
 @define	PTHREAD_PRIO_PROTECT	%(   2 %)
-@define	PTHREAD_MUTEX_NORMAL	 %(   0 %)
-@define	PTHREAD_MUTEX_RECURSIVE  %(   1 %)
-@define	PTHREAD_MUTEX_ERRORCHECK %(   2 %)
-@define	PTHREAD_MUTEX_ADAPTIVE	 %(   3 %)
+@define	PTHREAD_MUTEX_NORMAL	 %(  0 %)
+@define	PTHREAD_MUTEX_RECURSIVE  %(  1 %)
+@define	PTHREAD_MUTEX_ERRORCHECK %(  2 %)
+@define	PTHREAD_MUTEX_ADAPTIVE	 %(  3 %)
+@define CLOCK_REALTIME		%(   0 %)
+@define CLOCK_MONOTONIC		%(   1 %)
 
 private global _arg1;
 private global _arg2;
@@ -1812,6 +1818,10 @@ function print_mapentries() {
 
     count = 0; foreach (tid in condattr_init) { ++count; }
     if (count)	printf("condattr_init			= %d\n", count);
+    count = 0; foreach (tid in condattr_clock) { ++count; }
+    if (count)	printf("condattr_clock			= %d\n", count);
+    count = 0; foreach (tid in condattr_shared) { ++count; }
+    if (count)	printf("condattr_shared			= %d\n", count);
     count = 0; foreach ([tid, cond] in mutex_wait) { ++count; }
     if (count)	printf("mutex_wait			= %d\n", count);
     count = 0; foreach ([tid, cond] in cond_wait) { ++count; }
@@ -1820,6 +1830,10 @@ function print_mapentries() {
     if (count)	printf("cond_wait_timer			= %d\n", count);
     count = 0; foreach (tid in cond_init) { ++count; }
     if (count)	printf("cond_init			= %d\n", count);
+    count = 0; foreach (tid in cond_clock) { ++count; }
+    if (count)	printf("cond_clock			= %d\n", count);
+    count = 0; foreach (tid in cond_shared) { ++count; }
+    if (count)	printf("cond_shared			= %d\n", count);
 
     count = 0; foreach (tid in rwlockattr_init) { ++count; }
     if (count)	printf("rwlockattr_init			= %d\n", count);
@@ -1868,9 +1882,9 @@ process(@PTHREAD_PATH).function(@_pthread_mutex_init).return {
 	check_memory_reuse(mutex, "mutex");
 	mutex_init[mutex] = gettimeofday_us();
 	if (mutexattr_shared[attr])
-	    mutex_shared[mutex] = 1;
+	    mutex_shared[mutex] = mutexattr_shared[attr];
 	if (mutexattr_robust[attr])
-	    mutex_robust[mutex] = 1;
+	    mutex_robust[mutex] = mutexattr_robust[attr];
 	if (mutexattr_prioceiling[attr])
 	    mutex_prioceiling[mutex] = mutexattr_prioceiling[attr];
 	if (mutexattr_protocol[attr])
@@ -2134,25 +2148,65 @@ process(@PTHREAD_PATH).function(@_pthread_condattr_init).return {
 	next;
     result	= @RETURN;
     if (result == 0) {
-	if (expensive_checks) {
-	    attr	= @ENTRY_ARG1;
-	    check_memory_reuse(attr, "condattr");
-	    condattr_init[attr] = gettimeofday_us();
-	}
+	attr	= @ENTRY_ARG1;
+	check_memory_reuse(attr, "condattr");
+	condattr_init[attr] = gettimeofday_us();
     }
     else
 	report_error(ppfunc(), result);
 }
 
 probe
-process(@PTHREAD_PATH).function(@_pthread_condattr_getclock).return,
-process(@PTHREAD_PATH).function(@_pthread_condattr_getpshared).return,
-process(@PTHREAD_PATH).function(@_pthread_condattr_setclock).return,
+process(@PTHREAD_PATH).function(@_pthread_condattr_getclock).return {
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    if (result == 0) {
+	attr	= @ENTRY_ARG1;
+	clock	= @ENTRY_ARG2;
+	condattr_clock[attr] = user_int32(clock);
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
+process(@PTHREAD_PATH).function(@_pthread_condattr_getpshared).return {
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    if (result == 0) {
+	attr	= @ENTRY_ARG1;
+	pshared	= @ENTRY_ARG2;
+	condattr_shared[attr] = user_int32(pshared);
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
+process(@PTHREAD_PATH).function(@_pthread_condattr_setclock).return {
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    if (result == 0) {
+	attr	= @ENTRY_ARG1;
+	clock	= @ENTRY_ARG2;
+	condattr_clock[attr] = clock;
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
 process(@PTHREAD_PATH).function(@_pthread_condattr_setpshared).return {
     if (pid() != target())
 	next;
     result	= @RETURN;
     if (result == 0) {
+	attr	= @ENTRY_ARG1;
+	shared	= @ENTRY_ARG2;
+	condattr_shared[attr] = shared;
     }
     else
 	report_error(ppfunc(), result);
@@ -2161,6 +2215,8 @@ process(@PTHREAD_PATH).function(@_pthread_condattr_setpshared).return {
 function
 forget_condattr(attr) {
     delete condattr_init[attr];
+    delete condattr_clock[attr];
+    delete condattr_shared[attr];
 }
 
 probe
@@ -2169,14 +2225,12 @@ process(@PTHREAD_PATH).function(@_pthread_condattr_destroy).return {
 	next;
     result	= @RETURN;
     if (result == 0) {
-	if (expensive_checks) {
-	    attr	= @ENTRY_ARG1;
-	    if (condattr_init[attr] == -1)
-		possibly_double_destroy("pthread_condattr_destroy",
-					"condattr", attr);
-	    else
-		condattr_init[attr] = -1;
-	}
+	attr	= @ENTRY_ARG1;
+	if (condattr_init[attr] == -1)
+	    possibly_double_destroy("pthread_condattr_destroy",
+				    "condattr", attr);
+	else
+	    condattr_init[attr] = -1;
     }
     else
 	report_error(ppfunc(), result);
@@ -2187,13 +2241,15 @@ process(@PTHREAD_PATH).function(@_pthread_cond_init).return {
     if (pid() != target())
 	next;
     result = @RETURN;
-    /*
     attr = @ENTRY_ARG2;
-     */
     if (result == 0) {
 	cond = @ENTRY_ARG1;
 	check_memory_reuse(cond, "cond");
 	cond_init[cond] = gettimeofday_us();
+	if (condattr_clock[attr])
+	    cond_clock[cond] = condattr_clock[attr];
+	if (condattr_shared[attr])
+	    cond_shared[cond] = condattr_shared[attr];
     }
     else
 	report_error(ppfunc(), result);
@@ -2387,6 +2443,8 @@ forget_condition(cond) {
 	delete details_thread_count;
     }
     delete cond_init[cond];
+    delete cond_clock[cond];
+    delete cond_shared[cond];
 }
 
 probe
@@ -3433,6 +3491,10 @@ function report_cond(now) {
 		break;
 	    printf("%s ",
 		   cond_init[cond] > 0 ? "initialized" : "*destroyed");
+	    if (cond_clock[cond])
+		printf("monotonic ");
+	    if (cond_shared[cond])
+		printf("shared ");
 	    printf("condition %p waited %ld time%s by %ld thread%s",
 		   cond,
 		   cond_wait_count[cond],
@@ -3918,12 +3980,15 @@ function reset() {
     delete mutex_init;
     delete mutex_shared;
     delete mutex_robust;
-    if (expensive_checks)
-	delete condattr_init;
+    delete condattr_init;
+    delete condattr_clock;
+    delete condattr_shared;
     delete mutex_wait;
     delete cond_wait;
     delete cond_wait_timer;
     delete cond_init;
+    delete cond_clock;
+    delete cond_shared;
     if (expensive_checks)
 	delete rwlockattr_init;
     delete rwlock_init;
