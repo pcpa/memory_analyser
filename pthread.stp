@@ -433,6 +433,11 @@ private global canceled_tids;
 private global uncertain_tids;
 
 private global mutexattr_init;
+private global mutexattr_shared;
+private global mutexattr_robust;
+private global mutexattr_prioceiling;
+private global mutexattr_protocol;
+private global mutexattr_type;
 
 private global mutex_lock;
 private global mutex_lock_count;
@@ -441,6 +446,10 @@ private global mutex_lock_entry_timer;
 private global mutex_consistent;
 private global mutex_prioceiling;
 private global mutex_init;
+private global mutex_shared;
+private global mutex_robust;
+private global mutex_protocol;
+private global mutex_type;
 
 /* Sum of contention time from attempt to lock until getting the lock */
 private global mutex_contention_total_time;
@@ -787,6 +796,17 @@ global binary_path_for_gdbserver = "";
 @define	ETIMEDOUT		%( 110 %)
 @define	EOWNERDEAD		%( 130 %)
 @define	ENOTRECOVERABLE		%( 131 %)
+@define	PTHREAD_PROCESS_PRIVATE	%(   0 %)
+@define	PTHREAD_PROCESS_SHARED	%(   1 %)
+@define	PTHREAD_MUTEX_STALLED	%(   0 %)
+@define	PTHREAD_MUTEX_ROBUST	%(   1 %)
+@define	PTHREAD_PRIO_NONE	%(   0 %)
+@define	PTHREAD_PRIO_INHERIT	%(   1 %)
+@define	PTHREAD_PRIO_PROTECT	%(   2 %)
+@define	PTHREAD_MUTEX_NORMAL	 %(   0 %)
+@define	PTHREAD_MUTEX_RECURSIVE  %(   1 %)
+@define	PTHREAD_MUTEX_ERRORCHECK %(   2 %)
+@define	PTHREAD_MUTEX_ADAPTIVE	 %(   3 %)
 
 private global _arg1;
 private global _arg2;
@@ -1439,32 +1459,154 @@ process(@PTHREAD_PATH).function(@_pthread_mutexattr_init).return {
 	next;
     result	= @RETURN;
     if (result == 0) {
-	if (expensive_checks) {
-	    attr	= @ENTRY_ARG1;
-	    check_memory_reuse(attr, "mutexattr");
-	    mutexattr_init[attr] = gettimeofday_us();
-	}
+	attr	= @ENTRY_ARG1;
+	check_memory_reuse(attr, "mutexattr");
+	mutexattr_init[attr] = gettimeofday_us();
     }
     else
 	report_error(ppfunc(), result);
 }
 
 probe
-process(@PTHREAD_PATH).function(@_pthread_mutexattr_getprioceiling).return,
-process(@PTHREAD_PATH).function(@_pthread_mutexattr_getprotocol).return,
-process(@PTHREAD_PATH).function(@_pthread_mutexattr_getpshared).return,
-process(@PTHREAD_PATH).function(@_pthread_mutexattr_getrobust).return,
-process(@PTHREAD_PATH).function(@_pthread_mutexattr_gettype).return,
-process(@PTHREAD_PATH).function(@_pthread_mutexattr_setprioceiling).return,
-process(@PTHREAD_PATH).function(@_pthread_mutexattr_setprotocol).return,
-process(@PTHREAD_PATH).function(@_pthread_mutexattr_setpshared).return,
-process(@PTHREAD_PATH).function(@_pthread_mutexattr_setrobust).return,
-process(@PTHREAD_PATH).function(@_pthread_mutexattr_gettype).return {
+process(@PTHREAD_PATH).function(@_pthread_mutexattr_getprioceiling).return
+{
     if (pid() != target())
 	next;
     result	= @RETURN;
     if (result == 0) {
+	attr		= @ENTRY_ARG1;
+	prioceiling	= @ENTRY_ARG2;
+	mutexattr_prioceiling[attr] = user_int32(prioceiling);
     }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
+process(@PTHREAD_PATH).function(@_pthread_mutexattr_getprotocol).return {
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    if (result == 0) {
+	attr		= @ENTRY_ARG1;
+	protocol	= @ENTRY_ARG2;
+	mutexattr_protocol[attr] = user_int32(protocol);
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
+process(@PTHREAD_PATH).function(@_pthread_mutexattr_getpshared).return {
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    if (result == 0) {
+	attr	= @ENTRY_ARG1;
+	pshared	= @ENTRY_ARG2;
+	mutexattr_shared[attr] = user_int32(pshared) == @PTHREAD_PROCESS_SHARED;
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
+process(@PTHREAD_PATH).function(@_pthread_mutexattr_getrobust).return {
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    if (result == 0) {
+	attr	= @ENTRY_ARG1;
+	robust	= @ENTRY_ARG2;
+	mutexattr_robust[attr] = user_int32(robust) == @PTHREAD_MUTEX_ROBUST;
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
+process(@PTHREAD_PATH).function(@_pthread_mutexattr_gettype).return
+{
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    if (result == 0) {
+	attr	= @ENTRY_ARG1;
+	kind	= @ENTRY_ARG2;
+	mutexattr_type[attr] = user_int32(kind);
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
+process(@PTHREAD_PATH).function(@_pthread_mutexattr_setprioceiling).return
+{
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    if (result == 0) {
+	attr		= @ENTRY_ARG1;
+	prioceiling	= @ENTRY_ARG2;
+	mutexattr_prioceiling[attr] = prioceiling;
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
+process(@PTHREAD_PATH).function(@_pthread_mutexattr_setprotocol).return {
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    if (result == 0) {
+	attr		= @ENTRY_ARG1;
+	protocol	= @ENTRY_ARG2;
+	mutexattr_protocol[attr] = protocol;
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
+process(@PTHREAD_PATH).function(@_pthread_mutexattr_setpshared).return {
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    if (result == 0) {
+	attr	= @ENTRY_ARG1;
+	shared	= @ENTRY_ARG2;
+	mutexattr_shared[attr] = shared == @PTHREAD_PROCESS_SHARED;
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
+process(@PTHREAD_PATH).function(@_pthread_mutexattr_setrobust).return
+{
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    if (result == 0) {
+	attr	= @ENTRY_ARG1;
+	robust	= @ENTRY_ARG2;
+	mutexattr_robust[attr] = robust == @PTHREAD_MUTEX_ROBUST;
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
+process(@PTHREAD_PATH).function(@_pthread_mutexattr_settype).return {
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    if (result == 0) {
+	attr	= @ENTRY_ARG1;
+	type	= @ENTRY_ARG2;
+	mutexattr_type[attr] = type;
+     }
     else
 	report_error(ppfunc(), result);
 }
@@ -1472,6 +1614,11 @@ process(@PTHREAD_PATH).function(@_pthread_mutexattr_gettype).return {
 function
 forget_mutexattr(attr) {
     delete mutexattr_init[attr];
+    delete mutexattr_shared[attr];
+    delete mutexattr_robust[attr];
+    delete mutexattr_prioceiling[attr];
+    delete mutexattr_protocol[attr];
+    delete mutexattr_type[attr];
 }
 
 probe
@@ -1480,14 +1627,12 @@ process(@PTHREAD_PATH).function(@_pthread_mutexattr_destroy).return {
 	next;
     result	= @RETURN;
     if (result == 0) {
-	if (expensive_checks) {
-	    attr  = @ENTRY_ARG1;
-	    if (mutexattr_init[attr] == -1)
-		possibly_double_destroy("pthread_mutexattr_destroy",
-					"mutexattr", attr);
-	    else
-		mutexattr_init[attr] = -1;
-	}
+	attr  = @ENTRY_ARG1;
+	if (mutexattr_init[attr] == -1)
+	    possibly_double_destroy("pthread_mutexattr_destroy",
+				    "mutexattr", attr);
+	else
+	    mutexattr_init[attr] = -1;
     }
     else
 	report_error(ppfunc(), result);
@@ -1634,6 +1779,16 @@ function print_mapentries() {
 
     count = 0; foreach (tid in mutexattr_init) { ++count; }
     if (count)	printf("mutexattr_init			= %d\n", count);
+    count = 0; foreach (tid in mutexattr_shared) { ++count; }
+    if (count)	printf("mutexattr_shared		= %d\n", count);
+    count = 0; foreach (tid in mutexattr_robust) { ++count; }
+    if (count)	printf("mutexattr_robust		= %d\n", count);
+    count = 0; foreach (tid in mutexattr_prioceiling) { ++count; }
+    if (count)	printf("mutexattr_prioceiling		= %d\n", count);
+    count = 0; foreach (tid in mutexattr_protocol) { ++count; }
+    if (count)	printf("mutexattr_protocol		= %d\n", count);
+    count = 0; foreach (tid in mutexattr_type) { ++count; }
+    if (count)	printf("mutexattr_type			= %d\n", count);
     count = 0; foreach (tid in mutex_lock) { ++count; }
     if (count)	printf("mutex_lock			= %d\n", count);
     count = 0; foreach ([tid, mutex] in mutex_lock_entry) { ++count; }
@@ -1646,6 +1801,14 @@ function print_mapentries() {
     if (count)	printf("mutex_prioceiling		= %d\n", count);
     count = 0; foreach (tid in mutex_init) { ++count; }
     if (count)	printf("mutex_init			= %d\n", count);
+    count = 0; foreach (tid in mutex_shared) { ++count; }
+    if (count)	printf("mutex_shared			= %d\n", count);
+    count = 0; foreach (tid in mutex_robust) { ++count; }
+    if (count)	printf("mutex_robust			= %d\n", count);
+    count = 0; foreach (tid in mutex_protocol) { ++count; }
+    if (count)	printf("mutex_protocol			= %d\n", count);
+    count = 0; foreach (tid in mutex_type) { ++count; }
+    if (count)	printf("mutex_type			= %d\n", count);
 
     count = 0; foreach (tid in condattr_init) { ++count; }
     if (count)	printf("condattr_init			= %d\n", count);
@@ -1701,11 +1864,19 @@ process(@PTHREAD_PATH).function(@_pthread_mutex_init).return {
     result = @RETURN;
     if (result == 0) {
 	mutex = @ENTRY_ARG1;
-	/*
 	attr  = @ENTRY_ARG2;
-	 */
 	check_memory_reuse(mutex, "mutex");
 	mutex_init[mutex] = gettimeofday_us();
+	if (mutexattr_shared[attr])
+	    mutex_shared[mutex] = 1;
+	if (mutexattr_robust[attr])
+	    mutex_robust[mutex] = 1;
+	if (mutexattr_prioceiling[attr])
+	    mutex_prioceiling[mutex] = mutexattr_prioceiling[attr];
+	if (mutexattr_protocol[attr])
+	    mutex_protocol[mutex] = mutexattr_protocol[attr];
+	if (mutexattr_type[attr])
+	    mutex_type[mutex] = mutexattr_type[attr];
     }
     else
 	report_error(ppfunc(), result);
@@ -1931,6 +2102,11 @@ forget_mutex(mutex) {
 	delete mutex_lock_max_time[mutex];
     }
     delete mutex_init[mutex];
+    delete mutex_shared[mutex];
+    delete mutex_robust[mutex];
+    delete mutex_prioceiling[mutex];
+    delete mutex_protocol[mutex];
+    delete mutex_type[mutex];
 }
 
 probe
@@ -1995,7 +2171,7 @@ process(@PTHREAD_PATH).function(@_pthread_condattr_destroy).return {
     if (result == 0) {
 	if (expensive_checks) {
 	    attr	= @ENTRY_ARG1;
-	    if (mutexattr_init[attr] == -1)
+	    if (condattr_init[attr] == -1)
 		possibly_double_destroy("pthread_condattr_destroy",
 					"condattr", attr);
 	    else
@@ -2990,7 +3166,7 @@ check_memory_reuse(pointer, type) {
 	forget_attr(pointer);
     }
     if (mutexattr_init[pointer]) {
-	if (expensive_checks && mutexattr_init[pointer] != -1) {
+	if (mutexattr_init[pointer] != -1) {
 	    printf("mutexattr %p reused", pointer);
 	    if (type != "mutexattr")
 		printf(" as a %s", type);
@@ -3152,11 +3328,27 @@ function report_mutex(now) {
 		    printf("%s ",
 			   mutex_init[mutex] > 0 ?
 			   "initialized" : "*destroyed");
+		if (mutex_shared[mutex])
+		    printf("shared ");
+		if (mutex_robust[mutex])
+		    printf("robust ");
 		if (mutex_consistent[mutex])
 		    printf("%sconsistent ",
 			   mutex_consistent[mutex] < 0 ? "*in" : "");
 		if (mutex_prioceiling[mutex])
 		    printf("%ld prioceiling ", mutex_prioceiling[mutex]);
+		if (mutex_protocol[mutex])
+		    printf("protocol(%s) ",
+			   mutex_protocol[mutex] == @PTHREAD_PRIO_INHERIT ?
+			   "inherit" : "protect");
+		if (mutex_type[mutex])
+		    printf("%s ",
+			   mutex_type[mutex] == @PTHREAD_MUTEX_RECURSIVE ?
+			   "recursive" :
+			   mutex_type[mutex] == @PTHREAD_MUTEX_ERRORCHECK ?
+			   "errorcheck" :
+			   mutex_type[mutex] == @PTHREAD_MUTEX_ADAPTIVE ?
+			   "adaptive" : "*unknown type");
 		printf("mutex %p locked %ld time%s by %ld thread%s",
 		       mutex,
 		       mutex_contention_count[mutex],
@@ -3710,14 +3902,22 @@ function reset() {
 	delete barrier_contention_count;
 	delete barrier_contention_per_thread;
     }
-    if (expensive_checks)
-	delete mutexattr_init;
+    delete mutexattr_init;
+    delete mutexattr_shared;
+    delete mutexattr_robust;
+    delete mutexattr_prioceiling;
+    delete mutexattr_protocol;
+    delete mutexattr_type;
     delete mutex_lock;
     delete mutex_lock_entry;
     delete mutex_lock_entry_timer;
     delete mutex_consistent;
     delete mutex_prioceiling;
+    delete mutex_protocol;
+    delete mutex_type;
     delete mutex_init;
+    delete mutex_shared;
+    delete mutex_robust;
     if (expensive_checks)
 	delete condattr_init;
     delete mutex_wait;
