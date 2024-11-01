@@ -420,6 +420,15 @@ private global thread_to_tid;
 private global thread_name;
 
 private global attr_init;
+private global attr_affinity;
+private global attr_detachstate;
+private global attr_guardsize;
+private global attr_inheritsched;
+private global attr_schedparam;
+private global attr_schedpolicy;
+private global attr_scope;
+private global attr_stackaddr;
+private global attr_stacksize;
 
 /* Explicit pthread_exit */
 private global exited_tids;
@@ -813,6 +822,12 @@ global binary_path_for_gdbserver = "";
 @define	PTHREAD_MUTEX_ADAPTIVE	 %(  3 %)
 @define CLOCK_REALTIME		%(   0 %)
 @define CLOCK_MONOTONIC		%(   1 %)
+@define PTHREAD_CREATE_JOINABLE	%(   0 %)
+@define PTHREAD_CREATE_DETACHED	%(   1 %)
+@define PTHREAD_INHERIT_SCHED	%(   0 %)
+@define PTHREAD_EXPLICIT_SCHED	%(   1 %)
+@define PTHREAD_SCOPE_SYSTEM	%(   0 %)
+@define PTHREAD_SCOPE_PROCESS	%(   1 %)
 
 private global _arg1;
 private global _arg2;
@@ -942,41 +957,313 @@ process(@PTHREAD_PATH).function(@_pthread_attr_init).return
 	next;
     result	= @RETURN;
     if (result == 0) {
-	if (expensive_checks) {
-	    attr	= @ENTRY_ARG1;
-	    check_memory_reuse(attr, "attr");
-	    attr_init[attr] = gettimeofday_us();
-	}
+	attr	= @ENTRY_ARG1;
+	check_memory_reuse(attr, "attr");
+	attr_init[attr] = gettimeofday_us();
     }
     else
 	report_error(ppfunc(), result);
 }
 
 probe
-process(@PTHREAD_PATH).function(@_pthread_attr_getaffinity).return,
-process(@PTHREAD_PATH).function(@_pthread_attr_getdetachstate).return,
-process(@PTHREAD_PATH).function(@_pthread_attr_getguardsize).return,
-process(@PTHREAD_PATH).function(@_pthread_attr_getinheritsched).return,
-process(@PTHREAD_PATH).function(@_pthread_attr_getschedparam).return,
-process(@PTHREAD_PATH).function(@_pthread_attr_getschedpolicy).return,
-process(@PTHREAD_PATH).function(@_pthread_attr_getscope).return,
-process(@PTHREAD_PATH).function(@_pthread_attr_getstackaddr).return,
-process(@PTHREAD_PATH).function(@_pthread_attr_getstack).return,
-process(@PTHREAD_PATH).function(@_pthread_attr_getstacksize).return,
-process(@PTHREAD_PATH).function(@_pthread_attr_setaffinity).return,
-process(@PTHREAD_PATH).function(@_pthread_attr_setdetachstate).return,
-process(@PTHREAD_PATH).function(@_pthread_attr_setguardsize).return,
-process(@PTHREAD_PATH).function(@_pthread_attr_setinheritsched).return,
-process(@PTHREAD_PATH).function(@_pthread_attr_setschedparam).return,
-process(@PTHREAD_PATH).function(@_pthread_attr_setschedpolicy).return,
-process(@PTHREAD_PATH).function(@_pthread_attr_setscope).return,
-process(@PTHREAD_PATH).function(@_pthread_attr_setstackaddr).return,
-process(@PTHREAD_PATH).function(@_pthread_attr_setstack).return,
+process(@PTHREAD_PATH).function(@_pthread_attr_getaffinity).return {
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    if (result == 0) {
+	attr	= @ENTRY_ARG1;
+	size	= @ENTRY_ARG2;
+	set	= @ENTRY_ARG3;
+	attr_affinity[attr] = user_string_n(set, size);
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
+process(@PTHREAD_PATH).function(@_pthread_attr_getdetachstate).return
+{
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    if (result == 0) {
+	attr	= @ENTRY_ARG1;
+	state	= @ENTRY_ARG2;
+	attr_detachstate[attr] = user_int32(state);
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
+process(@PTHREAD_PATH).function(@_pthread_attr_getguardsize).return
+{
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    if (result == 0) {
+	attr	= @ENTRY_ARG1;
+	size	= @ENTRY_ARG2;
+	attr_guardsize[attr] = user_int64(size);
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
+process(@PTHREAD_PATH).function(@_pthread_attr_getinheritsched).return {
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    if (result == 0) {
+	attr	= @ENTRY_ARG1;
+	inherit	= @ENTRY_ARG2;
+	attr_inheritsched[attr] = user_int32(inherit);
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
+process(@PTHREAD_PATH).function(@_pthread_attr_getschedparam).return
+{
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    if (result == 0) {
+	attr	= @ENTRY_ARG1;
+	param	= @ENTRY_ARG2;	/* struct sched_param *param */
+	/*
+	 *	struct sched_param
+	 *	{
+	 *	  int sched_priority;
+	 *	};
+	 */
+	attr_schedparam[attr] = user_int32(param);
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
+process(@PTHREAD_PATH).function(@_pthread_attr_getschedpolicy).return {
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    if (result == 0) {
+	attr	= @ENTRY_ARG1;
+	policy	= @ENTRY_ARG2;
+	attr_schedpolicy[attr] = user_int32(policy);
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
+process(@PTHREAD_PATH).function(@_pthread_attr_getscope).return
+{
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    if (result == 0) {
+	attr	= @ENTRY_ARG1;
+	scope	= @ENTRY_ARG2;
+	attr_scope[attr] = user_int32(scope);
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
+process(@PTHREAD_PATH).function(@_pthread_attr_getstackaddr).return {
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    if (result == 0) {
+	attr	= @ENTRY_ARG1;
+	addr	= @ENTRY_ARG2;
+	attr_stackaddr[attr] = user_int64(addr);
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
+process(@PTHREAD_PATH).function(@_pthread_attr_getstack).return {
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    if (result == 0) {
+	attr	= @ENTRY_ARG1;
+	addr	= @ENTRY_ARG2;
+	size	= @ENTRY_ARG3;
+	attr_stackaddr[attr] = user_int64(addr);
+	attr_stacksize[attr] = user_int64(size);
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
+process(@PTHREAD_PATH).function(@_pthread_attr_getstacksize).return {
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    if (result == 0) {
+	attr	= @ENTRY_ARG1;
+	size	= @ENTRY_ARG2;
+	attr_stacksize[attr] = user_int64(size);
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
+process(@PTHREAD_PATH).function(@_pthread_attr_setaffinity).return {
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    if (result == 0) {
+	attr	= @ENTRY_ARG1;
+	size	= @ENTRY_ARG2;
+	set	= @ENTRY_ARG3;
+	attr_affinity[attr] = user_string_n(set, size);
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
+process(@PTHREAD_PATH).function(@_pthread_attr_setdetachstate).return
+{
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    if (result == 0) {
+	attr	= @ENTRY_ARG1;
+	state	= @ENTRY_ARG2;
+	attr_detachstate[attr] = state;
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
+process(@PTHREAD_PATH).function(@_pthread_attr_setguardsize).return {
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    if (result == 0) {
+	attr	= @ENTRY_ARG1;
+	size	= @ENTRY_ARG2;
+	attr_guardsize[attr] = size;
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
+process(@PTHREAD_PATH).function(@_pthread_attr_setinheritsched).return
+{
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    if (result == 0) {
+	attr	= @ENTRY_ARG1;
+	inherit	= @ENTRY_ARG2;
+	attr_inheritsched[attr] = inherit;
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
+process(@PTHREAD_PATH).function(@_pthread_attr_setschedparam).return {
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    if (result == 0) {
+	attr	= @ENTRY_ARG1;
+	param	= @ENTRY_ARG2;	/* struct sched_param *param */
+	/*
+	 *	struct sched_param
+	 *	{
+	 *	  int sched_priority;
+	 *	};
+	 */
+	attr_schedparam[attr] = user_int32(param);
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
+process(@PTHREAD_PATH).function(@_pthread_attr_setschedpolicy).return {
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    if (result == 0) {
+	attr	= @ENTRY_ARG1;
+	policy	= @ENTRY_ARG2;
+	attr_schedpolicy[attr] = policy;
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
+process(@PTHREAD_PATH).function(@_pthread_attr_setscope).return {
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    if (result == 0) {
+	attr	= @ENTRY_ARG1;
+	scope	= @ENTRY_ARG2;
+	attr_scope[attr] = scope;
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
+process(@PTHREAD_PATH).function(@_pthread_attr_setstackaddr).return {
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    if (result == 0) {
+	attr	= @ENTRY_ARG1;
+	addr	= @ENTRY_ARG2;
+	attr_stackaddr[attr] = addr;
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
+process(@PTHREAD_PATH).function(@_pthread_attr_setstack).return {
+    if (pid() != target())
+	next;
+    result	= @RETURN;
+    if (result == 0) {
+	attr	= @ENTRY_ARG1;
+	addr	= @ENTRY_ARG2;
+	size	= @ENTRY_ARG3;
+	attr_stackaddr[attr] = addr;
+	attr_stacksize[attr] = size;
+    }
+    else
+	report_error(ppfunc(), result);
+}
+
+probe
 process(@PTHREAD_PATH).function(@_pthread_attr_setstacksize).return {
     if (pid() != target())
 	next;
     result	= @RETURN;
     if (result == 0) {
+	attr	= @ENTRY_ARG1;
+	size	= @ENTRY_ARG2;
+	attr_stacksize[attr] = size;
     }
     else
 	report_error(ppfunc(), result);
@@ -985,6 +1272,15 @@ process(@PTHREAD_PATH).function(@_pthread_attr_setstacksize).return {
 function
 forget_attr(attr) {
     delete attr_init[attr];
+    delete attr_affinity[attr];
+    delete attr_detachstate[attr];
+    delete attr_guardsize[attr];
+    delete attr_inheritsched[attr];
+    delete attr_schedparam[attr];
+    delete attr_schedpolicy[attr];
+    delete attr_scope[attr];
+    delete attr_stackaddr[attr];
+    delete attr_stacksize[attr];
 }
 
 probe
@@ -993,19 +1289,17 @@ process(@PTHREAD_PATH).function(@_pthread_attr_destroy).return {
 	next;
     result	= @RETURN;
     if (result == 0) {
-	if (expensive_checks) {
-	    attr  = @ENTRY_ARG1;
-	    if (attr_init[attr] == -1) {
-		backtrace = sprint_ubacktrace();
-		/* if attr is NULL a default one is used. */
-		if (backtrace =~ "pthread_create@@GLIBC")
-		    next;
-		possibly_double_destroy("pthread_attr_destroy",
-					"attr", attr);
-	    }
-	    else
-		attr_init[attr] = -1;
+	attr  = @ENTRY_ARG1;
+	if (attr_init[attr] == -1) {
+	    backtrace = sprint_ubacktrace();
+	    /* if attr is NULL a default one is used. */
+	    if (backtrace =~ "pthread_create@@GLIBC")
+		next;
+	    possibly_double_destroy("pthread_attr_destroy",
+				    "attr", attr);
 	}
+	else
+	    attr_init[attr] = -1;
     }
     else
 	report_error(ppfunc(), result);
@@ -1661,6 +1955,25 @@ function print_mapentries() {
     if (count)	printf("thread_name			= %d\n", count);
     count = 0;	foreach (tid in attr_init) { ++count; }
     if (count)	printf("attr_init			= %d\n", count);
+    count = 0;	foreach (tid in attr_affinity) { ++count; }
+    if (count)	printf("attr_affinity			= %d\n", count);
+    count = 0;	foreach (tid in attr_detachstate) { ++count; }
+    if (count)	printf("attr_detachstate		= %d\n", count);
+    count = 0;	foreach (tid in attr_guardsize) { ++count; }
+    if (count)	printf("attr_guardsize			= %d\n", count);
+    count = 0;	foreach (tid in attr_inheritsched) { ++count; }
+    if (count)	printf("attr_inheritsched		= %d\n", count);
+    count = 0;	foreach (tid in attr_schedparam) { ++count; }
+    if (count)	printf("attr_schedparam			= %d\n", count);
+    count = 0;	foreach (tid in attr_schedpolicy) { ++count; }
+    if (count)	printf("attr_schedpolicy		= %d\n", count);
+    count = 0;	foreach (tid in attr_scope) { ++count; }
+    if (count)	printf("attr_scope			= %d\n", count);
+    count = 0;	foreach (tid in attr_stackaddr) { ++count; }
+    if (count)	printf("attr_stackaddr			= %d\n", count);
+    count = 0;	foreach (tid in attr_stacksize) { ++count; }
+    if (count)	printf("attr_stacksize			= %d\n", count);
+
     count = 0;	foreach (tid in mutex_contention_total_time) { ++count; }
     if (count)	printf("mutex_contention_total_time	= %d\n", count);
     count = 0;	foreach (tid in mutex_contention_min_time) { ++count; }
@@ -3903,6 +4216,15 @@ function reset() {
     delete canceled_tids;
     delete uncertain_tids;
     delete attr_init;
+    delete attr_affinity;
+    delete attr_detachstate;
+    delete attr_guardsize;
+    delete attr_inheritsched;
+    delete attr_schedparam;
+    delete attr_schedpolicy;
+    delete attr_scope;
+    delete attr_stackaddr;
+    delete attr_stacksize;
     if (verbose) {
 	delete thread_name;
 	delete mutex_contention_total_time;
