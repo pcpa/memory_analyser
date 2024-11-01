@@ -15,7 +15,7 @@ to the command line and still get useful reports.
 with non matching lock/unlock or init/destroy, or doing an init without
 calling the init, but a memcpy, etc. What puts the script out of sync.
 
-$ stap pthread.stp -DDMAXMAPENTRIES=65536 -DMAXACTION=65536 -DSTP_OVERLOAD_THRESHOLD=1073741824LL -Gverbose=1 -c 'java -jar /path/to/sample.jar'
+$ stap pthread.stp -DMAXMAPENTRIES=65536 -DMAXACTION=65536 -DSTP_OVERLOAD_THRESHOLD=1073741824LL -Gverbose=1 -c 'java -jar /path/to/sample.jar'
 Stap ready.
 ...
 Report for java ("/usr/bin/java", ["java", "-jar", ...]
@@ -391,6 +391,10 @@ global trap_on_unexpected = 0;
 global verbose = 0;
 
 global expensive_checks = 0;
+
+/* -Gdebug_self=1 to print number o map entries and possibly other script
+ * self debuging information */
+global debug_self = 0;
 
 /* Number of detailed mutexes to report; sorted by total contention time.
  * This option is added to avoid too large N vale for -DMAX_ACTIONS=N as
@@ -1487,6 +1491,207 @@ process(@PTHREAD_PATH).function(@_pthread_mutexattr_destroy).return {
     }
     else
 	report_error(ppfunc(), result);
+}
+
+function print_mapentries() {
+    count = 0;	foreach (tid in tid_to_thread) { ++count; }
+    if (count)	printf("tid_to_thread			= %d\n", count);
+    count = 0;	foreach (tid in thread_to_tid) { ++count; }
+    if (count)	printf("thread_to_tid			= %d\n", count);
+    count = 0;	foreach (tid in exited_tids) { ++count; }
+    if (count)	printf("exited_tids			= %d\n", count);
+    count = 0;	foreach (tid in joined_tids) { ++count; }
+    if (count)	printf("joined_tids			= %d\n", count);
+    count = 0;	foreach (tid in canceled_tids) { ++count; }
+    if (count)	printf("canceled_tids			= %d\n", count);
+    count = 0;	foreach (tid in uncertain_tids) { ++count; }
+    if (count)	printf("uncertain_tids			= %d\n", count);
+    count = 0;	foreach (tid in thread_name) { ++count; }
+    if (count)	printf("thread_name			= %d\n", count);
+    count = 0;	foreach (tid in attr_init) { ++count; }
+    if (count)	printf("attr_init			= %d\n", count);
+    count = 0;	foreach (tid in mutex_contention_total_time) { ++count; }
+    if (count)	printf("mutex_contention_total_time	= %d\n", count);
+    count = 0;	foreach (tid in mutex_contention_min_time) { ++count; }
+    if (count)	printf("mutex_contention_min_time	= %d\n", count);
+
+    count = 0;	foreach (tid in mutex_contention_max_time) { ++count; }
+    if (count)	printf("mutex_contention_max_time	= %d\n", count);
+    count = 0;	foreach (tid in mutex_contention_count) { ++count; }
+    if (count)	printf("mutex_contention_count		= %d\n", count);
+    count = 0;	foreach ([tid, mutex] in mutex_contention_per_thread) { ++count; }
+    if (count)	printf("mutex_contention_per_thread	= %d\n", count);
+    count = 0;	foreach (tid in mutex_contention_fail_try) { ++count; }
+    if (count)	printf("mutex_contention_fail_try	= %d\n", count);
+    count = 0; foreach (tid in mutex_contention_fail_timed) { ++count; }
+    if (count)	printf("mutex_contention_fail_timed	= %d\n", count);
+    count = 0; foreach (tid in mutex_lock_total_time) { ++count; }
+    if (count)	printf("mutex_lock_total_time		= %d\n", count);
+    count = 0; foreach (tid in mutex_lock_min_time) { ++count; }
+    if (count)	printf("mutex_lock_min_time		= %d\n", count);
+    count = 0; foreach (tid in mutex_lock_max_time) { ++count; }
+    if (count)	printf("mutex_lock_max_time		= %d\n", count);
+
+    count = 0; foreach (tid in cond_wait_count) { ++count; }
+    if (count)	printf("cond_wait_count			= %d\n", count);
+    count = 0; foreach ([tid, cond] in cond_wait_per_thread) { ++count; }
+    if (count)	printf("cond_wait_per_thread		= %d\n", count);
+    count = 0; foreach (tid in cond_wait_total_time) { ++count; }
+    if (count)	printf("cond_wait_total_time		= %d\n", count);
+    count = 0; foreach (tid in cond_wait_min_time) { ++count; }
+    if (count)	printf("cond_wait_min_time		= %d\n", count);
+    count = 0; foreach (tid in cond_wait_max_time) { ++count; }
+    if (count)	printf("cond_wait_max_time		= %d\n", count);
+    count = 0; foreach (tid in cond_wait_timedout) { ++count; }
+    if (count)	printf("cond_wait_timedout		= %d\n", count);
+    count = 0; foreach (tid in cond_signal_count) { ++count; }
+    if (count)	printf("cond_signal_count		= %d\n", count);
+    count = 0; foreach ([tid, cond] in cond_signal_per_thread) { ++count; }
+    if (count)	printf("cond_signal_per_thread		= %d\n", count);
+    count = 0; foreach (tid in cond_broadcast_count) { ++count; }
+    if (count)	printf("cond_broadcast_count		= %d\n", count);
+    count = 0; foreach ([tid, cond] in cond_broadcast_per_thread) { ++count; }
+    if (count)	printf("cond_broadcast_per_thread	= %d\n", count);
+
+    count = 0; foreach (tid in rdlock_count) { ++count; }
+    if (count)	printf("rdlock_count			= %d\n", count);
+    count = 0; foreach (tid in rdlock_contention_total_time) { ++count; }
+    if (count)	printf("rdlock_contention_total_time	= %d\n", count);
+    count = 0; foreach (tid in rdlock_contention_min_time) { ++count; }
+    if (count)	printf("rdlock_contention_min_time	= %d\n", count);
+    count = 0; foreach (tid in rdlock_contention_max_time) { ++count; }
+    if (count)	printf("rdlock_contention_max_time	= %d\n", count);
+    count = 0; foreach (tid in rdlock_contention_count) { ++count; }
+    if (count)	printf("rdlock_contention_count		= %d\n", count);
+    count = 0; foreach ([tid, rwlock] in rdlock_contention_per_thread) { ++count; }
+    if (count)	printf("rdlock_contention_per_thread	= %d\n", count);
+    count = 0; foreach (tid in rdlock_contention_fail_try) { ++count; }
+    if (count)	printf("rdlock_contention_fail_try	= %d\n", count);
+    count = 0; foreach (tid in rdlock_contention_fail_timed) { ++count; }
+    if (count)	printf("rdlock_contention_fail_timed	= %d\n", count);
+    count = 0; foreach (tid in rdlock_total_time) { ++count; }
+    if (count)	printf("rdlock_total_time		= %d\n", count);
+    count = 0; foreach (tid in rdlock_min_time) { ++count; }
+    if (count)	printf("rdlock_min_time			= %d\n", count);
+    count = 0; foreach (tid in rdlock_max_time) { ++count; }
+    if (count)	printf("rdlock_max_time			= %d\n", count);
+    count = 0; foreach (tid in wrlock_count) { ++count; }
+    if (count)	printf("wrlock_count			= %d\n", count);
+    count = 0; foreach (tid in wrlock_contention_total_time) { ++count; }
+    if (count)	printf("wrlock_contention_total_time	= %d\n", count);
+    count = 0; foreach (tid in wrlock_contention_min_time) { ++count; }
+    if (count)	printf("wrlock_contention_min_time	= %d\n", count);
+    count = 0; foreach (tid in wrlock_contention_max_time) { ++count; }
+    if (count)	printf("wrlock_contention_max_time	= %d\n", count);
+    count = 0; foreach (tid in wrlock_contention_count) { ++count; }
+    if (count)	printf("wrlock_contention_count		= %d\n", count);
+    count = 0; foreach ([tid, rwlock] in wrlock_contention_per_thread) { ++count; }
+    if (count)	printf("wrlock_contention_per_thread	= %d\n", count);
+    count = 0; foreach (tid in wrlock_contention_fail_try) { ++count; }
+    if (count)	printf("wrlock_contention_fail_try	= %d\n", count);
+    count = 0; foreach (tid in wrlock_contention_fail_timed) { ++count; }
+    if (count)	printf("wrlock_contention_fail_timed	= %d\n", count);
+    count = 0; foreach (tid in wrlock_total_time) { ++count; }
+    if (count)	printf("wrlock_total_time		= %d\n", count);
+    count = 0; foreach (tid in wrlock_min_time) { ++count; }
+    if (count)	printf("wrlock_min_time			= %d\n", count);
+    count = 0; foreach (tid in wrlock_max_time) { ++count; }
+    if (count)	printf("wrlock_max_time			= %d\n", count);
+
+    count = 0; foreach (tid in spin_count) { ++count; }
+    if (count)	printf("spin_count			= %d\n", count);
+    count = 0; foreach (tid in spin_contention_total_time) { ++count; }
+    if (count)	printf("spin_contention_total_time	= %d\n", count);
+    count = 0; foreach (tid in spin_contention_min_time) { ++count; }
+    if (count)	printf("spin_contention_min_time	= %d\n", count);
+    count = 0; foreach (tid in spin_contention_max_time) { ++count; }
+    if (count)	printf("spin_contention_max_time	= %d\n", count);
+    count = 0; foreach (tid in spin_contention_count) { ++count; }
+    if (count)	printf("spin_contention_count		= %d\n", count);
+    count = 0; foreach ([tid, spin] in spin_contention_per_thread) { ++count; }
+    if (count)	printf("spin_contention_per_thread	= %d\n", count);
+    count = 0; foreach (tid in spin_contention_fail_try) { ++count; }
+    if (count)	printf("spin_contention_fail_try	= %d\n", count);
+    count = 0; foreach (tid in spin_total_time) { ++count; }
+    if (count)	printf("spin_total_time			= %d\n", count);
+    count = 0; foreach (tid in spin_min_time) { ++count; }
+    if (count)	printf("spin_min_time			= %d\n", count);
+    count = 0; foreach (tid in spin_max_time) { ++count; }
+    if (count)	printf("spin_max_time			= %d\n", count);
+
+    count = 0; foreach (tid in barrier_count) { ++count; }
+    if (count)	printf("barrier_count			= %d\n", count);
+    count = 0; foreach (tid in barrier_contention_total_time) { ++count; }
+    if (count)	printf("barrier_contention_total_time	= %d\n", count);
+    count = 0; foreach (tid in barrier_contention_min_time) { ++count; }
+    if (count)	printf("barrier_contention_min_time	= %d\n", count);
+    count = 0; foreach (tid in barrier_contention_max_time) { ++count; }
+    if (count)	printf("barrier_contention_max_time	= %d\n", count);
+    count = 0; foreach (tid in barrier_contention_count) { ++count; }
+    if (count)	printf("barrier_contention_count	= %d\n", count);
+    count = 0; foreach ([tid, barrier] in barrier_contention_per_thread) { ++count; }
+    if (count)	printf("barrier_contention_per_thread	= %d\n", count);
+
+    count = 0; foreach (tid in mutexattr_init) { ++count; }
+    if (count)	printf("mutexattr_init			= %d\n", count);
+    count = 0; foreach (tid in mutex_lock) { ++count; }
+    if (count)	printf("mutex_lock			= %d\n", count);
+    count = 0; foreach ([tid, mutex] in mutex_lock_entry) { ++count; }
+    if (count)	printf("mutex_lock_entry		= %d\n", count);
+    count = 0; foreach ([tid, mutex] in mutex_lock_entry_timer) { ++count; }
+    if (count)	printf("mutex_lock_entry_timer		= %d\n", count);
+    count = 0; foreach (tid in mutex_consistent) { ++count; }
+    if (count)	printf("mutex_consistent		= %d\n", count);
+    count = 0; foreach (tid in mutex_prioceiling) { ++count; }
+    if (count)	printf("mutex_prioceiling		= %d\n", count);
+    count = 0; foreach (tid in mutex_init) { ++count; }
+    if (count)	printf("mutex_init			= %d\n", count);
+
+    count = 0; foreach (tid in condattr_init) { ++count; }
+    if (count)	printf("condattr_init			= %d\n", count);
+    count = 0; foreach ([tid, cond] in mutex_wait) { ++count; }
+    if (count)	printf("mutex_wait			= %d\n", count);
+    count = 0; foreach ([tid, cond] in cond_wait) { ++count; }
+    if (count)	printf("cond_wait			= %d\n", count);
+    count = 0; foreach ([tid, cond] in cond_wait_timer) { ++count; }
+    if (count)	printf("cond_wait_timer			= %d\n", count);
+    count = 0; foreach (tid in cond_init) { ++count; }
+    if (count)	printf("cond_init			= %d\n", count);
+
+    count = 0; foreach (tid in rwlockattr_init) { ++count; }
+    if (count)	printf("rwlockattr_init			= %d\n", count);
+    count = 0; foreach (tid in rwlock_init) { ++count; }
+    if (count)	printf("rwlock_init			= %d\n", count);
+    count = 0; foreach (tid in rdlocks) { ++count; }
+    if (count)	printf("rdlocks				= %d\n", count);
+    count = 0; foreach ([tid, rwlock] in rdlock_entry) { ++count; }
+    if (count)	printf("rdlock_entry			= %d\n", count);
+    count = 0; foreach ([tid, rwlock] in rdlock_entry_timer) { ++count; }
+    if (count)	printf("rdlock_entry_timer		= %d\n", count);
+    count = 0; foreach (tid in wrlocks) { ++count; }
+    if (count)	printf("wrlocks				= %d\n", count);
+    count = 0; foreach ([tid, rwlock] in wrlock_entry) { ++count; }
+    if (count)	printf("wrlock_entry			= %d\n", count);
+    count = 0; foreach ([tid, rwlock] in wrlock_entry_timer) { ++count; }
+    if (count)	printf("wrlock_entry_timer		= %d\n", count);
+
+    count = 0; foreach (tid in spin_init) { ++count; }
+    if (count)	printf("spin_init			= %d\n", count);
+    count = 0; foreach ([tid, spin] in spin_entry) { ++count; }
+    if (count)	printf("spin_entry			= %d\n", count);
+    count = 0; foreach (tid in spinlocks) { ++count; }
+    if (count)	printf("spinlocks			= %d\n", count);
+
+    count = 0; foreach (tid in barrierattr_init) { ++count; }
+    if (count)	printf("barrierattr_init		= %d\n", count);
+    count = 0; foreach (tid in barrier_init) { ++count; }
+    if (count)	printf("barrier_init			= %d\n", count);
+    count = 0; foreach ([tid, barrier] in barrier_entry) { ++count; }
+    if (count)	printf("barrier_entry			= %d\n", count);
+    count = 0; foreach (tid in barrier_count) { ++count; }
+    if (count)	printf("barrier_count			= %d\n", count);
+    count = 0; foreach (tid in barriers) { ++count; }
+    if (count)	printf("barriers			= %d\n", count);
 }
 
 probe
@@ -3389,6 +3594,10 @@ function report() {
     report_wrlock(now);
     report_spin(now);
     report_barrier(now);
+    if (debug_self) {
+	printf("Used maps:\n");
+	print_mapentries();
+    }
 }
 
 probe signal.send {
