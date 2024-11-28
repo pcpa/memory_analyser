@@ -1,0 +1,249 @@
+#!/bin/stap
+
+@define FUTEX_WAIT		%(   0 %)
+@define FUTEX_PRIVATE_FLAG	%( 128 %)
+@define FUTEX_CLOCK_REALTIME	%( 256 %)
+
+@define	EPERM			%(   1 %)
+@define EAGAIN			%(  11 %)
+@define ERESTARTSYS		%( 512 %)
+
+/* If gdbserver does not work, you can try:
+ * while test -z "$(pidof BINARY)"; do :; done; gdb -p $(pidof BINARY)
+ */
+global start_gdbserver = 0;
+global gdbserver_port = 1234;
+global binary_path_for_gdbserver = "";
+
+private global next_unique_id;
+private global key_to_backtrace;
+private global backtrace_to_key;
+private global futex_entry;
+private global futex_contention_per_tid;
+private global futex_contention;
+
+private global process_name = "";
+private global process_path = "";
+private global process_arguments, exec_process_arguments;
+
+private global sorting_report;
+private global detailed_report;
+private global _return;
+@define RETURN		%( @defined($return) ? $return : register(_return) %)
+
+probe begin {
+    %( $# >= 1 %?
+      if (start_gdbserver)
+	  binary_path_for_gdbserver = @1;
+	  %)
+
+    tokenize(cmdline_str(), " ");
+    token = tokenize("", " ");
+    if (token != "-c")
+	error(sprintf("Failed to tokenize command line.\n"
+		      "Cannot run system wide. "
+		      "Must use '-c CMD''.\n"
+		      "cmdline_str() returns <%s>\n",
+		      cmdline_str()));
+    if (start_gdbserver && binary_path_for_gdbserver == "")
+	error("When starting gdb_server must specify the binary path.\n"
+	      "Example: stap OPTS -c \"CMD\" /binary/path/for/gdbserver\n");
+
+    %( arch == "x86_64" %?
+      _return = "rax"
+      %: %( arch == "arm64" %?
+	   _return = "x0"
+	   %: %( arch == "powerpc" %?
+		_return = "r3"
+		%: error("unsupported architecture")
+		%)
+	   %)
+      %);
+    printf("Stap ready.\n");
+}
+
+function run_gdbserver(pid) {
+    system(sprintf("gdbserver --attach :%d %d",
+		   gdbserver_port, pid));
+    printf("To attach gdb, run in the command line\n$ gdb %s\n",
+	   process_path);
+    printf("In gdb prompt type:\n(gdb) target remote :%d\n\n",
+	   gdbserver_port);
+}
+
+function report_error(where:string, errno:long) {
+    if (errno == -@EAGAIN)
+	return;
+    if (errno == -@ERESTARTSYS)
+	return;
+    printf("%s error: %d %s\n", where, errno, errno_str(errno));
+    print_ubacktrace();
+    %(guru_mode != 0 %?
+      raise(%{ SIGTRAP %}) %: printf("generating SIGTRAP needs guru mode\n")
+	  %);
+}
+
+function get_unique_id:long(backtrace:string) {
+    key = backtrace_to_key[backtrace];
+    if (!key) {
+	/* This should never overflow */
+	key = ++next_unique_id;
+	key_to_backtrace[key] = backtrace;
+	backtrace_to_key[backtrace] = key;
+    }
+    return key;
+}
+
+probe syscall.futex {
+    if (pid() != target() ||
+	((op & ~(@FUTEX_PRIVATE_FLAG|@FUTEX_CLOCK_REALTIME)) != @FUTEX_WAIT))
+	next;
+    futex_entry[tid()] = gettimeofday_us();
+}
+
+probe syscall.futex.return {
+    if (pid() != target() || !futex_entry[tid()])
+	next;
+    if (@RETURN < 0)
+	report_error("futex", @RETURN);
+    else {
+	diff = gettimeofday_us() - futex_entry[tid()];
+	backtrace = sprint_ubacktrace();
+	key = get_unique_id(backtrace);
+	futex_contention_per_tid[tid(), key] += diff;
+	futex_contention[key] += diff;
+    }
+    if (@RETURN != -@ERESTARTSYS)
+	delete futex_entry[tid()];
+}
+
+function plural(count) {
+    return count != 1 ? "s" : "";
+}
+
+function comma(count) {
+    return count ? ", ": "";
+}
+
+function and(count) {
+    return count ? " and ": "";
+}
+
+function time_string(usec:long) {
+    result = "";
+    msec = sec = min = hour = day = 0;
+    temp = usec % 1000000;
+    if (temp != usec) {
+	msec = usec / 1000;
+	usec = temp;
+	if (msec) {
+	    sec = msec / 1000;
+	    if (sec) {
+		msec %= 1000;
+		min = sec / 60;
+		if (min) {
+		    sec %= 60;
+		    hour = min / 60;
+		    if (hour) {
+			min %= 60;
+			day = hour / 24;
+			if (day)
+			    hour %= 24;
+		    }
+		}
+	    }
+	}
+    }
+    if (day)
+	result .= sprintf("%ld day%s", day, plural(day));
+    if (hour)
+	result .= sprintf("%s%ld hour%s",
+			  comma(day), hour, plural(hour));
+    if (min)
+	result .= sprintf("%s%ld min%s",
+			  comma(hour || day), min, plural(min));
+    if (sec)
+	result .= sprintf("%s%ld sec%s",
+			  comma(min || hour || day),
+			  sec, plural(sec));
+    if (msec)
+	result .= sprintf("%s%ld msec%s",
+			  comma(sec || min || hour || day),
+			  msec, plural(msec));
+    if (usec)
+	result .= sprintf("%s%ld usec%s",
+			  and(msec || sec || min || hour || day),
+			  usec, plural(usec));
+    return result;
+}
+
+function report() {
+    printf("\nReport for %s (%s)\n", process_name, process_arguments);
+    foreach ([tid, key] in futex_contention_per_tid) {
+	if (detailed_report[key] != "")
+	    detailed_report[key] .= sprintf(" %ld", tid);
+	else
+	    detailed_report[key] = sprintf("%ld", tid);
+    }
+    foreach (key in futex_contention) {
+	sorting_report[futex_contention[key], key] = 1;
+    }
+    foreach ([usec-, key] in sorting_report) {
+	printf("== %s (%s)\n%s",
+	       time_string(usec),
+	       detailed_report[key],
+	       key_to_backtrace[key]);
+    }
+    delete sorting_report;
+    delete detailed_report;
+}
+
+probe signal.send {
+    if (sig_name == "SIGURG" && sig_pid == target())
+	report();
+}
+
+probe kprocess.exec {
+    if (pid() != target())
+	next;
+    process_path = filename;
+    exec_process_arguments = argstr;
+}
+
+probe kprocess.exec_complete {
+    if (pid() != target())
+	next;
+
+    if (success) {
+	if (process_name != "") {
+	    report();
+	    reset();
+	}
+	tmp = str_replace(process_path, "/./", "/");
+	tmp = str_replace(tmp, "./", "");
+	tmp = str_replace(tmp, "\"", "");
+	if (start_gdbserver &&
+	    ((binary_path_for_gdbserver != "" &&
+	      (binary_path_for_gdbserver == tmp ||
+	       isinstr(binary_path_for_gdbserver, tmp))) ||
+	     (binary_path_for_gdbserver == "" && tmp != "")))
+	    run_gdbserver(pid());
+	process_name = execname();
+	process_arguments = exec_process_arguments;
+    }
+}
+
+function reset() {
+    delete process_arguments;
+    delete key_to_backtrace;
+    delete backtrace_to_key;
+    delete futex_entry;
+    delete futex_contention_per_tid;
+    delete futex_contention;
+}
+
+probe end {
+    report();
+    reset();
+    printf("Stap done.\n");
+}
