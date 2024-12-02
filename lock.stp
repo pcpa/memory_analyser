@@ -21,6 +21,7 @@ private global backtrace_to_key;
 private global futex_entry;
 private global futex_contention_per_tid;
 private global futex_contention;
+private global futex_restart;
 
 private global process_name = "";
 private global process_path = "";
@@ -98,7 +99,8 @@ probe syscall.futex {
     if (pid() != target() ||
 	((op & ~(@FUTEX_PRIVATE_FLAG|@FUTEX_CLOCK_REALTIME)) != @FUTEX_WAIT))
 	next;
-    futex_entry[tid()] = gettimeofday_us();
+    if (!futex_restart[tid()])
+	futex_entry[tid()] = gettimeofday_us();
 }
 
 probe syscall.futex.return {
@@ -113,8 +115,12 @@ probe syscall.futex.return {
 	futex_contention_per_tid[tid(), key] += diff;
 	futex_contention[key] += diff;
     }
-    if (@RETURN != -@ERESTARTSYS)
+    if (@RETURN != -@ERESTARTSYS) {
 	delete futex_entry[tid()];
+	delete futex_restart[tid()];
+    }
+    else
+	futex_restart[tid()] = 1;
 }
 
 function plural(count) {
@@ -238,6 +244,7 @@ function reset() {
     delete key_to_backtrace;
     delete backtrace_to_key;
     delete futex_entry;
+    delete futex_restart;
     delete futex_contention_per_tid;
     delete futex_contention;
 }
