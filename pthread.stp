@@ -4187,21 +4187,14 @@ probe kprocess.exec_complete {
 	    report();
 	    reset();
 	}
-
-	if (start_gdbserver) {
-	    printf("binary_path_for_gdbserver = %s\nprocess_path = %s\n",
-		   binary_path_for_gdbserver, process_path);
-	}
-
+	tmp = str_replace(process_path, "/./", "/");
+	tmp = str_replace(tmp, "./", "");
+	tmp = str_replace(tmp, "\"", "");
 	if (start_gdbserver &&
 	    ((binary_path_for_gdbserver != "" &&
-	      (binary_path_for_gdbserver == process_path ||
-	       /* process_path is a string starting/ending with quotes */
-	       sprintf("\"%s\"", binary_path_for_gdbserver) == process_path ||
-	       /* Extra heuristic to match "/bin/foo" in "/usr/bin/foo"
-		* and simplify the logic to "work as intended" */
-	       isinstr(process_path, binary_path_for_gdbserver))) ||
-	     (binary_path_for_gdbserver == "" && process_path != "")))
+	      (binary_path_for_gdbserver == tmp ||
+	       isinstr(binary_path_for_gdbserver, tmp))) ||
+	     (binary_path_for_gdbserver == "" && tmp != "")))
 	    run_gdbserver(pid());
 	process_name = execname();
 	process_arguments = exec_process_arguments;
