@@ -1253,7 +1253,7 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
   }
 
   /* Not called if preloading */
-  probe process("/lib64/libctcmalloc*.so.4").function("mmap") ? {
+  probe process("/lib64/libtcmalloc*.so.4").function("mmap") ? {
       if (ignore_mmap || pid() != target() ||
 	  (ignore_mmap_during_alloc && doing_memory_allocation[tid()]))
 	  next;
@@ -1283,7 +1283,7 @@ process("/lib64/libstdc++.so.6").function("_ZdlPv").return
       common_mremap(new_pointer, old_pointer, new_size, old_size, n_tc_mremap);
   }
 
-  probe process("/lib64/libctcmalloc*.so.4").function("munmap") ? {
+  probe process("/lib64/libtcmalloc*.so.4").function("munmap") ? {
       if (ignore_mmap || pid() != target() ||
 	  (ignore_mmap_during_alloc && doing_memory_allocation[tid()]))
 	  next;
