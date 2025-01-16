@@ -1841,7 +1841,7 @@ semantic error: invalid access '->count' for array type: operator '->' at /usr/s
 	     proc_mem_data() * mem_page_size());
       printf("Total program virtual memory size           : %ld\n",
 	     proc_mem_size() * mem_page_size());
-      printf(" Program shared pages (from shared mappings): %ld\n",
+      printf("Program shared pages (from shared mappings) : %ld\n",
 	     proc_mem_shr() * mem_page_size());
       printf("Program resident set size                   : %ld\n",
 	     proc_mem_rss() * mem_page_size());
