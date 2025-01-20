@@ -158,6 +158,14 @@ global break_keys;
  */
 global bytes_alloced_in_backtrace;
 
+/* Record how many times a given backtrace was hit, to have a better
+ * idea of average memory allocation.
+ */
+global backtrace_count;
+
+/* -Gverbose=1 to compute count and average per backtrace */
+global verbose = 0;
+
 /* At least recent kernel or systemtap versions cannot get @entry arguments
  * for the mmap2 syscall. Record it in the entry probe, and handle it in
  * the return probe when it succeeds. */
@@ -217,6 +225,8 @@ probe syscall.brk.return {
 	backtrace = sprint_ubacktrace();
 	key = get_unique_id(backtrace);
 	bytes_alloced_in_backtrace[key] += length;
+	if (verbose)
+	    ++backtrace_count[key];
 	break_keys[key] = 1;
     }
 }
@@ -298,6 +308,8 @@ probe syscall.mmap2.return {
 function common_mmap(pointer, length, key) {
     pointer_backtrace_map[pointer] = key;
     bytes_alloced_in_backtrace[key] += length;
+    if (verbose)
+	++backtrace_count[key];
     pointer_length_map[pointer] = length;
 }
 
@@ -418,6 +430,11 @@ function report() {
 	%(guru_mode != 0 %?
 	  if (key_to_filename[key] != "")
 	      printf(" (%s)", key_to_filename[key]) %);
+	if (verbose) {
+	    count = backtrace_count[key];
+	    if (count)
+		printf(" %ld times, %ld average", count, bytes / count);
+	}
 	printf("\n%s", key_to_backtrace[key]);
     }
     delete detailed_report;
@@ -435,6 +452,8 @@ function reset() {
     delete pointer_backtrace_map;
     delete pointer_length_map;
     delete bytes_alloced_in_backtrace;
+    if (verbose)
+	delete backtrace_count;
     delete mmap_length;
     delete mremap_old_pointer;
     delete mremap_old_length;
