@@ -1,0 +1,277 @@
+#!/usr/bin/stap
+
+global record_double_free = 0;
+/* If reports for unhandled pointers are printed, the cause probably is due to
+ * an incorrect check if memory was allocated from glibc. In that case, the
+ * script needs to be patched, as this option might cause signficant overhead. */
+global debug_called_from_glibc_p = 0;
+/* Same as above but just avoids noise when there is a mismatch on pointer not
+ * from glibc. Only makes sense if debug_called_from_glibc_p is set. */
+global ignore_mismatch_in_called_from_glibc_p = 0;
+
+private global pointer_alloc_addresses_in_code;
+private global pointer_release_address_in_code;
+private global count_alloced_in_code_address;
+private global count_freed_in_code_address;
+private global address_to_key;
+private global backtrace_to_key;
+private global key_to_backtrace;
+private global next_unique_id = 0;
+private global detailed_report;
+private global pointer_alloc_address_in_code;
+
+private global _arg1;
+private global _arg2;
+private global _arg3;
+private global _return;
+@define ARG1			%( @defined($arg1) ? $arg1 : register(_arg1) %)
+@define ENTRY_ARG1		%( @defined(@entry($arg1)) ? @entry($arg1) : @entry(register(_arg1)) %)
+@define ARG2			%( @defined($arg2) ? $arg2 : register(_arg2) %)
+@define ENTRY_ARG2		%( @defined(@entry($arg2)) ? @entry($arg2) : @entry(register(_arg2)) %)
+@define ARG3			%( @defined($arg3) ? $arg3 : register(_arg3) %)
+@define ENTRY_ARG3		%( @defined(@entry($arg3)) ? @entry($arg3) : @entry(register(_arg3)) %)
+@define RETURN			%( @defined($return) ? $return : register(_return) %)
+
+@define RHEL8			%( 0 %)
+
+%( @RHEL8 == 1 %?
+  @define GLIBC_PATH		%( "/usr/lib64/libc-2.28.so" %)
+  @define LDSO_PATH		%( "/usr/lib64/ld-2.28.so" %)
+  // FIXME remove soon. Only useful temporarily for RHEL 8.4
+  @define skip_double_int_free_in_nl_make_l10nflist %( 1 %)
+  %:
+  @define GLIBC_PATH		%( "/usr/lib64/libc.so.6" %)
+  @define LDSO_PATH		%( "/usr/lib64/ld-linux-x86-64.so.2" %)
+  @define skip_double_int_free_in_nl_make_l10nflist %( 0 %)
+  %)
+
+probe begin {
+    %( arch == "x86_64" %?
+      _arg1 = "rdi";
+      _arg2 = "rsi";
+      _arg3 = "rdx";
+      _return = "rax"
+      %: %( arch == "arm64" %?
+	   _arg1 = "x0";
+	   _arg2 = "x1";
+	   _arg3 = "x2";
+	   _return = "x0"
+	   %: %( arch == "powerpc" %?
+		_arg1 = "r3";
+		_arg2 = "r4";
+		_arg3 = "r5";
+		_return = "r3"
+		%: error("unsupported architecture")
+		%)
+	   %)
+      %);
+    printf("Stap ready.\n");
+}
+
+function get_unique_id:long(backtrace:string) {
+    key = backtrace_to_key[backtrace];
+    if (!key) {
+	/* This should never overflow */
+	key = ++next_unique_id;
+	key_to_backtrace[key] = backtrace;
+	backtrace_to_key[backtrace] = key;
+    }
+    return key;
+}
+
+function module_or_empty(addr) {
+    try {
+	module = umodname(addr);
+    }
+    catch {
+	module = "";
+    }
+    return module;
+}
+
+function ucaller_address:long(nest) {
+    try {
+	caller = ucallers(1);
+    }
+    catch {
+	caller = "";
+    };
+    token = tokenize(caller, " ");
+    while (--nest)
+	token = tokenize("", " ");
+    return strtol(token, 16);
+}
+
+function called_from_glibc_p(nest) {
+    result = 0;
+    addr = ucaller_address(nest);
+    if (addr) {
+	// symbol = usymname(addr);
+	module = module_or_empty(addr);
+	result = (module == @GLIBC_PATH || module == @LDSO_PATH);
+	/* if ((result = (module == @GLIBC_PATH || module == @LDSO_PATH))) {
+	    if (nest == 2 && (symbol == "strdup" || symbol == "cfree@GLIBC_2.2.5"))
+		result = called_from_glibc_p(3);
+	}
+	*/
+	// printf("%ld %ld %s %s\n", result, nest, symbol, module);
+    }
+    return result;
+}
+
+probe
+process(@GLIBC_PATH).function("_int_malloc").return,
+process(@GLIBC_PATH).function("_int_memalign").return,
+process(@LDSO_PATH).function("rtld_malloc").return ?,
+process(@LDSO_PATH).function("__minimal_malloc").return ? {
+    if (pid() != target())
+	next;
+    pointer = @RETURN;
+    if (pointer && called_from_glibc_p(2)) {
+	backtrace = sprint_ubacktrace();
+	key = get_unique_id(backtrace);
+	if (record_double_free)
+	    delete pointer_release_address_in_code[pointer];
+	code_address = uaddr();
+	address_to_key[code_address] = key;
+	pointer_alloc_addresses_in_code[pointer] = code_address;
+	++count_alloced_in_code_address[code_address];
+    }
+    else if (debug_called_from_glibc_p && pointer)
+	pointer_alloc_address_in_code[pointer] = uaddr();
+}
+
+function common_realloc(old_pointer, new_pointer) {
+    if ((old_pointer || new_pointer) && called_from_glibc_p(2)) {
+	old_pointer += 16;
+	old_code_address = pointer_alloc_addresses_in_code[old_pointer];
+	if (old_code_address) {
+	    delete pointer_alloc_addresses_in_code[old_pointer];
+	    ++count_freed_in_code_address[code_address];
+	}
+	if (new_pointer) {
+	    backtrace = sprint_ubacktrace();
+	    key = get_unique_id(backtrace);
+	    if (record_double_free)
+		delete pointer_release_address_in_code[new_pointer];
+	    code_address = uaddr();
+	    address_to_key[code_address] = key;
+	    pointer_alloc_addresses_in_code[new_pointer] = code_address;
+	    ++count_alloced_in_code_address[code_address];
+	}
+    }
+    else if (debug_called_from_glibc_p && (old_pointer || new_pointer)) {
+	delete pointer_alloc_address_in_code[old_pointer];
+	pointer_alloc_address_in_code[new_pointer] = uaddr();
+    }
+}
+
+probe
+process(@GLIBC_PATH).function("_int_realloc").return {
+    if (pid() != target())
+	next;
+    old_pointer = @ENTRY_ARG2;
+    new_pointer = @RETURN;
+    common_realloc(old_pointer, new_pointer);
+}
+
+probe
+process(@LDSO_PATH).function("rtld_realloc").return ?,
+process(@LDSO_PATH).function("__minimal_realloc").return ? {
+    if (pid() != target())
+	next;
+    old_pointer = @ENTRY_ARG1;
+    new_pointer = @RETURN;
+    common_realloc(old_pointer, new_pointer);
+}
+
+function common_free(pointer) {
+    if (pointer) {
+	if (called_from_glibc_p(2)) {
+	    code_address = pointer_alloc_addresses_in_code[pointer];
+	    if (code_address) {
+		delete pointer_alloc_addresses_in_code[pointer];
+		++count_freed_in_code_address[code_address];
+		if (record_double_free)
+		    pointer_release_address_in_code[pointer] = ucaller_address(2);
+	    }
+	    else {
+		/* Remove soon. Only temporarily disable some stray double
+		 * probes */
+		if (@skip_double_int_free_in_nl_make_l10nflist) {
+		    backtrace = sprint_ubacktrace();
+		    if (backtrace =~ "_nl_make_l10nflist+" ||
+			backtrace =~ "_nl_find_locale+")
+			next;
+		}
+		if (record_double_free)
+		    code_address = pointer_release_address_in_code[pointer];
+		else
+		    code_address = 0;
+		if (debug_called_from_glibc_p && pointer_alloc_address_in_code[pointer]) {
+		    if (ignore_mismatch_in_called_from_glibc_p)
+			return;
+		    printf("FIXME allocation not from glibc at %p\n", pointer_alloc_address_in_code[pointer]);
+		}
+		printf("Unhandled free %p\n", pointer);
+		if (code_address)
+		    printf("Recorded as released at %p\n", code_address);
+		print_ubacktrace();
+	    }
+	}
+    }
+}
+
+probe
+process(@GLIBC_PATH).function("_int_free") {
+    if (pid() != target())
+	next;
+    pointer = @ARG2;
+    pointer += 16;
+    common_free(pointer);
+}
+
+probe
+process(@LDSO_PATH).function("rtld_free") ?,
+process(@LDSO_PATH).function("__minimal_free") ? {
+    if (pid() != target())
+	next;
+    pointer = @ARG1;
+    common_free(pointer);
+}
+
+function report() {
+    foreach (address in address_to_key) {
+	count = count_alloced_in_code_address[address] -
+		count_freed_in_code_address[address];
+	if (count)
+	    detailed_report[count, address] = 1;
+    }
+    foreach ([count-, address] in detailed_report) {
+	allocs = count_alloced_in_code_address[address];
+	frees = count_freed_in_code_address[address];
+	printf("\n%ld (%ld-%ld)\t%p\n", count, allocs, frees, address);
+	printf("%s", key_to_backtrace[address_to_key[address]]);
+    }
+    delete detailed_report;
+}
+
+function reset() {
+    delete pointer_alloc_addresses_in_code;
+    if (record_double_free)
+	delete pointer_release_address_in_code;
+    delete count_alloced_in_code_address;
+    delete count_freed_in_code_address;
+    delete address_to_key;
+    delete backtrace_to_key;
+    delete key_to_backtrace;
+    if (debug_called_from_glibc_p)
+	delete pointer_alloc_address_in_code;
+    next_unique_id = 0;
+}
+
+probe end {
+    report();
+    reset();
+    printf("Stap done.\n");
+}
