@@ -10,7 +10,7 @@ global debug_called_from_glibc_p = 0;
 global ignore_mismatch_in_called_from_glibc_p = 0;
 
 private global pointer_alloc_addresses_in_code;
-private global pointer_release_address_in_code;
+private global debug_release_address_in_code;
 private global count_alloced_in_code_address;
 private global count_freed_in_code_address;
 private global address_to_key;
@@ -18,7 +18,7 @@ private global backtrace_to_key;
 private global key_to_backtrace;
 private global next_unique_id = 0;
 private global detailed_report;
-private global pointer_alloc_address_in_code;
+private global debug_alloc_address_in_code;
 
 private global _arg1;
 private global _arg2;
@@ -131,14 +131,14 @@ process(@LDSO_PATH).function("__minimal_malloc").return ? {
 	backtrace = sprint_ubacktrace();
 	key = get_unique_id(backtrace);
 	if (record_double_free)
-	    delete pointer_release_address_in_code[pointer];
+	    delete debug_release_address_in_code[pointer];
 	code_address = uaddr();
 	address_to_key[code_address] = key;
 	pointer_alloc_addresses_in_code[pointer] = code_address;
 	++count_alloced_in_code_address[code_address];
     }
     else if (debug_called_from_glibc_p && pointer)
-	pointer_alloc_address_in_code[pointer] = uaddr();
+	debug_alloc_address_in_code[pointer] = uaddr();
 }
 
 function common_realloc(old_pointer, new_pointer) {
@@ -153,7 +153,7 @@ function common_realloc(old_pointer, new_pointer) {
 	    backtrace = sprint_ubacktrace();
 	    key = get_unique_id(backtrace);
 	    if (record_double_free)
-		delete pointer_release_address_in_code[new_pointer];
+		delete debug_release_address_in_code[new_pointer];
 	    code_address = uaddr();
 	    address_to_key[code_address] = key;
 	    pointer_alloc_addresses_in_code[new_pointer] = code_address;
@@ -161,8 +161,8 @@ function common_realloc(old_pointer, new_pointer) {
 	}
     }
     else if (debug_called_from_glibc_p && (old_pointer || new_pointer)) {
-	delete pointer_alloc_address_in_code[old_pointer];
-	pointer_alloc_address_in_code[new_pointer] = uaddr();
+	delete debug_alloc_address_in_code[old_pointer];
+	debug_alloc_address_in_code[new_pointer] = uaddr();
     }
 }
 
@@ -193,7 +193,7 @@ function common_free(pointer) {
 		delete pointer_alloc_addresses_in_code[pointer];
 		++count_freed_in_code_address[code_address];
 		if (record_double_free)
-		    pointer_release_address_in_code[pointer] = ucaller_address(2);
+		    debug_release_address_in_code[pointer] = ucaller_address(2);
 	    }
 	    else {
 		/* Remove soon. Only temporarily disable some stray double
@@ -205,13 +205,13 @@ function common_free(pointer) {
 			next;
 		}
 		if (record_double_free)
-		    code_address = pointer_release_address_in_code[pointer];
+		    code_address = debug_release_address_in_code[pointer];
 		else
 		    code_address = 0;
-		if (debug_called_from_glibc_p && pointer_alloc_address_in_code[pointer]) {
+		if (debug_called_from_glibc_p && debug_alloc_address_in_code[pointer]) {
 		    if (ignore_mismatch_in_called_from_glibc_p)
 			return;
-		    printf("FIXME allocation not from glibc at %p\n", pointer_alloc_address_in_code[pointer]);
+		    printf("FIXME allocation not from glibc at %p\n", debug_alloc_address_in_code[pointer]);
 		}
 		printf("Unhandled free %p\n", pointer);
 		if (code_address)
@@ -259,14 +259,14 @@ function report() {
 function reset() {
     delete pointer_alloc_addresses_in_code;
     if (record_double_free)
-	delete pointer_release_address_in_code;
+	delete debug_release_address_in_code;
     delete count_alloced_in_code_address;
     delete count_freed_in_code_address;
     delete address_to_key;
     delete backtrace_to_key;
     delete key_to_backtrace;
     if (debug_called_from_glibc_p)
-	delete pointer_alloc_address_in_code;
+	delete debug_alloc_address_in_code;
     next_unique_id = 0;
 }
 
