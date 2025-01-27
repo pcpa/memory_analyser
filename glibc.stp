@@ -143,7 +143,6 @@ process(@LDSO_PATH).function("__minimal_malloc").return ? {
 
 function common_realloc(old_pointer, new_pointer) {
     if ((old_pointer || new_pointer) && called_from_glibc_p(2)) {
-	old_pointer += 16;
 	old_code_address = pointer_alloc_addresses_in_code[old_pointer];
 	if (old_code_address) {
 	    delete pointer_alloc_addresses_in_code[old_pointer];
@@ -171,6 +170,7 @@ process(@GLIBC_PATH).function("_int_realloc").return {
     if (pid() != target())
 	next;
     old_pointer = @ENTRY_ARG2;
+    old_pointer += 16;
     new_pointer = @RETURN;
     common_realloc(old_pointer, new_pointer);
 }
