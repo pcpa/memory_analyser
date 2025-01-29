@@ -20,6 +20,9 @@ private global next_unique_id = 0;
 private global detailed_report;
 private global debug_alloc_address_in_code;
 
+private global process_name = "";
+private global process_arguments, exec_process_arguments;
+
 private global _arg1;
 private global _arg2;
 private global _arg3;
@@ -241,6 +244,7 @@ process(@LDSO_PATH).function("__minimal_free") ? {
 }
 
 function report() {
+    printf("\nReport for %s (%s)\n", process_name, process_arguments);
     foreach (address in address_to_key) {
 	count = count_alloced_in_code_address[address] -
 		count_freed_in_code_address[address];
@@ -268,6 +272,25 @@ function reset() {
     if (debug_called_from_glibc_p)
 	delete debug_alloc_address_in_code;
     next_unique_id = 0;
+}
+
+probe kprocess.exec {
+    if (pid() != target())
+	next;
+    exec_process_arguments = argstr;
+}
+
+probe kprocess.exec_complete {
+    if (pid() != target())
+	next;
+    if (success) {
+	if (process_name != "") {
+	    report();
+	    reset();
+	}
+	process_name = execname();
+	process_arguments = exec_process_arguments;
+    }
 }
 
 probe end {
